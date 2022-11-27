@@ -1,6 +1,7 @@
 #include <stdio.h>
+#include <time.h>
 
-#define N 1000
+#define N 2
 
 // wrapper para checar erros nas chamadas de funções de CUDA
 #define CUDA_SAFE_CALL(call){ \
@@ -43,9 +44,11 @@ int main() {
   // copia os vetores da CPU para a GPU (host para device)
   CUDA_SAFE_CALL(cudaMemcpy(d_a, h_a, n_bytes, cudaMemcpyHostToDevice));
   CUDA_SAFE_CALL(cudaMemcpy(d_b, h_b, n_bytes, cudaMemcpyHostToDevice));
-
+  clock_t tempo;
+  tempo = clock();
   // Dispara o kernel com N threads
   VecAdd<<<1, N>>>(d_a, d_b, d_c);
+  printf("Tempo gasto: %.0lfms\n", (clock() - tempo)*1000.0/CLOCKS_PER_SEC);
   CUDA_SAFE_CALL(cudaGetLastError());
 
   // copia resultado da GPU para a CPU (device para host)
