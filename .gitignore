@@ -1,5 +1,6 @@
 *.exe
 *.exp
 *.lib
+*.pdf
 .vscode
 Notas Dissertação Wesley.md
