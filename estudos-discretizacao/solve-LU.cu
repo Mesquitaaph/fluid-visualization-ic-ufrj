@@ -94,8 +94,179 @@ void RESOLVE_TRIANGULAR_INFERIOR(int n, double* A, double* b, double* X) {
       sum += A[i*n + j]*X[j];
     }
 
-    X[i] = ( b[i] - sum ) / A[i*n + i];
+    X[i] = (b[i] - sum)/A[i*n + i];
   }
+}
+
+/*
+  Funcao que recebe uma matriz M, um inteiro N e
+  desaloca os ponteiros apontados por M, assim como desaloca M.
+*/
+void desalocaMatriz(double** M, int n) {
+  for(int i = 0; i < n; i++) free(M[i]);
+  free(M);
+}
+
+double** create_matrix(int n, int m) {
+  double **mtx;
+  mtx = (double**) malloc(n*sizeof(double*));
+  for(int i = 0; i < n; i++) {
+    mtx[i] = (double*) malloc(m*sizeof(double));
+    for(int j = 0; j < m; j++) {
+      mtx[i][j] = 0;
+    }
+  }
+  return mtx;
+}
+
+double** create_id_matrix(int n) {
+  double **mtx = create_matrix(n, n);
+  for(int i = 0; i < n; i++) {
+    mtx[i][i] = 1;
+  }
+  return mtx;
+}
+
+double** copy_matrix(double** A, int n, int m) {
+  double **mtx = create_matrix(n, m);
+  for(int i = 0; i < n; i++) {
+    for(int j = 0; j < m; j++) {
+      mtx[i][j] = A[i][j];
+    }
+  }
+  return mtx;
+}
+
+void copy_alloc_matrix(double** A, double** B, int n, int m) {
+  for(int i = 0; i < n; i++) {
+    for(int j = 0; j < m; j++) {
+      B[i][j] = A[i][j];
+    }
+  }
+}
+
+/*
+  Funcao com o algoritmo de soma de matrizes tradicional.
+*/
+int soma_matrizes(int n, double** A, double** B, double** C) {
+  for(int i = 0; i < n; i++) {
+    for(int j = 0; j < n; j++) {
+      C[i][j] = A[i][j] + B[i][j];
+    }
+  }
+  return 1;
+}
+
+/*
+  Funcao com o algoritmo de multiplicacao de matrizes tradicional.
+*/
+int mult_matrizes(int n, double** A, double** B, double** C) {
+  for(int i = 0; i < n; i++) {
+    for(int j = 0; j < n; j++) {
+      C[i][j] = 0;
+      for(int k = 0; k < n; k++) {
+        C[i][j] += A[i][k] * B[k][j];
+      }
+    }
+  }
+  return 1;
+}
+
+// Função que recebe uma posição i,j, monta uma
+// matriz E de zeros nxn e substitui E[i,j] por 1
+// Retorna a matriz resultante
+double** E(int n, int i, int j) {
+  double **e = create_matrix(n, n);
+  e[i][j] = 1;
+  return e;
+}
+
+/** Função que implementa a decomposição LU em uma matriz nxn.
+    Recebe uma matriz A quadrada nxn
+    Retorna L e U da decomposição
+*/
+void DECOMPOSICAO_LU(int n, double** A, double** rL, double** rU) {
+  double **Id = create_id_matrix(n); // Matriz identidade nxn
+  double **L = create_id_matrix(n); // Inicializando a matriz L com a matriz identidade
+  double **U = copy_matrix(A, n, n); // Inicializando a matriz U com a matriz A
+
+  // Neste laço montamos as matrizes L e U
+  // Sendo U o resultado de aplicar a eliminação gaussiana em A
+  // e L o inverso da matriz que multiplica A para obter U
+  for(int i = 0; i < n-1; i++) {
+    for(int j = i+1; j < n; j++) {
+      // Acha o fator que multiplica a linha i
+      // para fazer o elemento U[j,i] = 0
+      double k = -U[j][i] / U[i][i];
+
+      // Expressão matricial, na matriz U, equivalente a multiplicar
+      // a linha i por k e somar na linha j
+      double **eji = E(n, j, i);
+      eji[j][i] = k;
+
+      double **aux1 = create_matrix(n, n);
+      double **aux2 = copy_matrix(U, n, n);      
+
+      soma_matrizes(n, Id, eji, aux1);
+
+      desalocaMatriz(U, n);
+      U = create_matrix(n, n);
+      mult_matrizes(n, aux1, aux2, U);
+
+      // Análogo à expressão acima, porém com a diferença de que
+      // ao final L, é a inversa da matriz que multiplica A e obtém U
+      eji[j][i] = -k;
+
+      desalocaMatriz(aux1, n);
+      desalocaMatriz(aux2, n);
+
+      aux1 = create_matrix(n, n);
+      aux2 = copy_matrix(L, n, n);
+
+      soma_matrizes(n, Id, eji, aux1);
+      
+      desalocaMatriz(L, n);
+      L = create_matrix(n, n);
+      mult_matrizes(n, aux2, aux1, L);
+
+      // L = L * (Id - k*E(j,i))
+    }
+  }
+
+  copy_alloc_matrix(U, rU, n, n);
+  copy_alloc_matrix(L, rL, n, n);
+}
+
+void DECOMP_LU_SEQ(int n, double* A, double* rL, double* rU) {
+  double **Ad, **rLd, **rUd;
+  Ad = (double**)malloc(n*sizeof(double*));
+  rLd = (double**)malloc(n*sizeof(double*));
+  rUd = (double**)malloc(n*sizeof(double*));
+
+  for(int i = 0; i < n; i++) {
+    Ad[i] = (double*)malloc(n*sizeof(double));
+    rLd[i] = (double*)malloc(n*sizeof(double));
+    rUd[i] = (double*)malloc(n*sizeof(double));
+
+    for(int j = 0; j < n; j++) {
+      Ad[i][j] = A[i*n + j];
+    }
+  }
+
+  DECOMPOSICAO_LU(n, Ad, rLd, rUd);
+  for(int i = 0; i < n; i++) {
+    for(int j = 0; j < n; j++) {
+      rL[i*n + j] = rLd[i][j];
+      rU[i*n + j] = rUd[i][j];
+    }
+
+    free(Ad[i]);
+    free(rLd[i]);
+    free(rUd[i]);
+  }
+  free(Ad);
+  free(rLd);
+  free(rUd);
 }
 
 // Função que recebe a matriz A quadrada nxn e o vetor b nx1 do sistema AX = b
@@ -125,7 +296,7 @@ int mult_matriz_vec(int n, double* A, double* X, double* b) {
 
 int main (int argc, char *argv[]) {
   int dim_mat = atoi(argv[1]);
-  double *m, *d_m, *L, *U, *b, *X, *Xref;
+  double *m, *d_m, *L, *U, *Ls, *Us, *b, *X, *Xs, *Xref;
 
   // adicionar c´odigo para inicializar a vari´avel
   // dim_mat ( dimens~ao da matriz )
@@ -133,8 +304,11 @@ int main (int argc, char *argv[]) {
   m = (double*) malloc(quant_mem);
   L = (double*) malloc(quant_mem);
   U = (double*) malloc(quant_mem);
+  Ls = (double*) malloc(quant_mem);
+  Us = (double*) malloc(quant_mem);
   b = (double*) malloc(dim_mat * sizeof(double));
   X = (double*) malloc(dim_mat * sizeof(double));
+  Xs = (double*) malloc(dim_mat * sizeof(double));
   Xref = (double*) malloc(dim_mat * sizeof(double));
   if(m == NULL || L == NULL || U == NULL || b == NULL || X == NULL) {
     fprintf(stderr, "Memoria insuficiente\n");
@@ -144,17 +318,6 @@ int main (int argc, char *argv[]) {
   // adicionar c´odigo para preencher a matriz
   // e criar outros dados necess´arios para seu problema
   // alocar mem´oria na GPU para copiar a matriz
-  // m[0*dim_mat + 0] =  1.0;
-  // m[0*dim_mat + 1] =  8.0;
-  // m[0*dim_mat + 2] = -3.0;
-
-  // m[1*dim_mat + 0] = -3.0;
-  // m[1*dim_mat + 1] = -4.0;
-  // m[1*dim_mat + 2] = -8.0;
-
-  // m[2*dim_mat + 0] =  5.0;
-  // m[2*dim_mat + 1] =  6.0;
-  // m[2*dim_mat + 2] =  2.0;
 
   // Atribuindo valores aleatorios entre -1000 e 1000 para as matrizes A e B.
   for(int i = 0; i < dim_mat; i++) {
@@ -177,11 +340,18 @@ int main (int argc, char *argv[]) {
   // copiar a matriz para a GPU
   CUDA_SAFE_CALL(cudaMemcpy(d_m, m, quant_mem, cudaMemcpyHostToDevice));
 
-  clock_t tempo;
-  tempo = clock();
+  // Decomposição LU sequencial
+  clock_t tempoSeq;
+  tempoSeq = clock();
+  DECOMP_LU_SEQ(dim_mat, m, Ls, Us);
+  printf("Tempo gasto sequencial: %.0lfms\n", (clock() - tempoSeq)*1000.0/CLOCKS_PER_SEC);
+
+  // Decomposição LU concorrente
+  clock_t tempoConc;
+  tempoConc = clock();
   // executar a fatora¸c~ao na GPU
   alg_lu_gpu(d_m, dim_mat);
-  printf("Tempo gasto: %.0lfms\n", (clock() - tempo)*1000.0/CLOCKS_PER_SEC);
+  printf("Tempo gasto concorrente: %.0lfms\n", (clock() - tempoConc)*1000.0/CLOCKS_PER_SEC);
 
   // copiar o resultado da GPU para a CPU
   CUDA_SAFE_CALL(cudaMemcpy(m, d_m, quant_mem, cudaMemcpyDeviceToHost));
@@ -215,16 +385,24 @@ int main (int argc, char *argv[]) {
   }
 
   SOLVE_LU(dim_mat, b, X, L, U);
-  
-  // printf("Vector b = \n");
-  
-  // for(int i = 0; i < dim_mat; i++) {
-  //   printf("Xref = %lf\n", b[i]);
-  // }
-  // printf("\n\n");
+  SOLVE_LU(dim_mat, b, Xs, Ls, Us);
+
 
   printf("Vector X = \n");
   int teste = 1;
+  for(int i = 0; i < dim_mat; i++) {
+    if(Xref[i] - Xs[i] < 1/10/10/10/10/10/10/10/10 || Xs[i] - Xref[i] < 1/10/10/10/10/10/10/10/10) {
+        continue;
+    } else {
+      teste = 0;
+      printf("Xref = %lf, Xs = %lf\n", Xref[i], Xs[i]);
+      break;
+    }
+  }
+  printf("%s\n\n", teste ? "Deu certo sequencial" : "Deu ruim sequencial");
+
+  printf("Vector X = \n");
+  teste = 1;
   for(int i = 0; i < dim_mat; i++) {
     if(Xref[i] - X[i] < 1/10/10/10/10/10/10/10/10 || X[i] - Xref[i] < 1/10/10/10/10/10/10/10/10) {
         continue;
@@ -234,7 +412,7 @@ int main (int argc, char *argv[]) {
       break;
     }
   }
-  printf("%s\n\n", teste ? "Deu certo" : "Deu ruim");
+  printf("%s\n\n", teste ? "Deu certo concorrente" : "Deu ruim concorrente");
 
   free(m);
   CUDA_SAFE_CALL(cudaDeviceReset());
