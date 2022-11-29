@@ -10,6 +10,13 @@ void print_matrix(double** A, int n, int m) {
   }
 }
 
+void print_vector(double* A, int n) {
+  for(int i = 0; i < n; i++) {
+    printf("%lf ", A[i]);
+  }
+  printf("\n");
+}
+
 /*
   Funcao que recebe uma matriz M, um inteiro N e
   desaloca os ponteiros apontados por M, assim como desaloca M.
@@ -84,6 +91,19 @@ int mult_matrizes(int n, double** A, double** B, double** C) {
   return 1;
 }
 
+/*
+  Funcao com o algoritmo de multiplicacao de matrizes tradicional.
+*/
+int mult_matriz_vec(int n, double** A, double* X, double* b) {
+  for(int i = 0; i < n; i++) {
+    b[i] = 0;
+    for(int k = 0; k < n; k++) {
+      b[i] += A[i][k] * X[k];
+    }
+  }
+  return 1;
+}
+
 // Função que resolve um sistema linear diagonal AX = b
 // Recebe uma matriz quadrada A e um vetor b
 // Retorna o vetor X, solução do sistema linear diagonal AX = b
@@ -124,8 +144,6 @@ void RESOLVE_TRIANGULAR_INFERIOR(int n, double** A, double* b, double* X) {
   }
 }
 
-
-// Abaixo em construção ------------------------------------
 
 // Função que recebe uma posição i,j, monta uma
 // matriz E de zeros nxn e substitui E[i,j] por 1
@@ -211,45 +229,76 @@ void SOLVE_LU(int n, double** A, double* b, double* X) {
   RESOLVE_TRIANGULAR_SUPERIOR(n, U, c, X);
 }
 
+void preencheMatrizCalorA(int n, double** A, double r) {
+  A[0][0] = 2+2*r;
+  A[0][1] = -r;
+  A[n-1][n-2] = -r;
+  A[n-1][n-1] = 2+2*r;
+
+  for(int i = 1; i < n-1; i++) {
+    A[i][i-1] = -r;
+    A[i][i] = 2+2*r;
+    A[i][i+1] = -r;
+  }
+}
+
+void preencheMatrizCalorB(int n, double** B, double r) {
+  B[0][0] = 2-2*r;
+  B[0][1] = r;
+  B[n-1][n-2] = r;
+  B[n-1][n-1] = 2-2*r;
+
+  for(int i = 1; i < n-1; i++) {
+    B[i][i-1] = r;
+    B[i][i] = 2-2*r;
+    B[i][i+1] = r;
+  }
+}
+
 int main() {
-  int n = 3;
+  int n = 100, nt = 10;
+  double L, dx, dt, k, r;
 
   double **A = create_matrix(n, n);
+  double **B = create_matrix(n, n);
   double *X = (double*) malloc(n*sizeof(double));
+  double *u = (double*) malloc(n*sizeof(double));
   double *b = (double*) malloc(n*sizeof(double));
-  
-  A[0][0] =  1.0;
-  A[0][1] =  8.0;
-  A[0][2] = -3.0;
-
-  A[1][0] = -3.0;
-  A[1][1] = -4.0;
-  A[1][2] = -8.0;
-
-  A[2][0] =  5.0;
-  A[2][1] =  6.0;
-  A[2][2] =  2.0;
-
-  b[0] =  32.0;
-  b[1] = -95.0;
-  b[2] =  75.0;
-
-  printf("Matriz A = \n");
-  print_matrix(A, n, n);
-  printf("\n");
-
-  printf("Vector b = \n");
-  for(int i = 0; i < n; i++) {
-    printf("%lf ", b[i]);
+  double **estados = (double**) malloc(nt*sizeof(double*));
+  for(int t = 0; t < nt; t++) {
+    estados[t] = (double*) malloc(n*sizeof(double));
   }
-  printf("\n\n");
-  
-  printf("Vector X = \n");
+  L = 1.0;
+  dx = L/10.0;
+  dt = 0.1;
+  k = 0.12;
+  r = dt*k/(dx*dx);
+
+  for(int i = 0; i < n; i++) {
+    u[i] = 20;
+    estados[0][i] = 20;
+  }
+
+  preencheMatrizCalorA(n, A, r);
+  preencheMatrizCalorB(n, B, r);
+
+  mult_matriz_vec(n, B, u, b);
   SOLVE_LU(n, A, b, X);
-  for(int i = 0; i < n; i++) {
-    printf("%lf ", X[i]);
+
+  for(int t = 1; t < nt; t++) {
+    for(int i = 0; i < n; i++) {
+      u[i] = X[i];
+      estados[t][i] = X[i];
+    }
+    mult_matriz_vec(n, B, u, b);
+
+    SOLVE_LU(n, A, b, X);
   }
-  printf("\n\n");
   
+  for(int t = 0; t < nt; t++) {
+    printf("Vector t%d = \n", t);
+    print_vector(estados[t], n);
+    printf("\n");
+  }
   return 0;
 }
