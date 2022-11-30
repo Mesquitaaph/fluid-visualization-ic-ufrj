@@ -281,10 +281,11 @@ int mtxtestseq[WIDTH * HEIGHT * 3];
 int mtxtestconc[WIDTH * HEIGHT * 3];
 
 // Atribuindo configurações do programa
-t_plot WindowMatrixPlot = {0.001, -1.2506, 0.041, WIDTH, HEIGHT};
+t_plot WindowMatrixPlot = {1, -0, 0, WIDTH, HEIGHT};
 int N_THREADS;
-int MAX_ITERATIONS;
-double MAX_BRIGHT_LENGTH;
+int MAX_ITERATIONS = 100;
+double MAX_BRIGHT_LENGTH = 1;
+
 
 // Variável que armazena o andamento do programa na matriz
 int mtxposition;
@@ -321,59 +322,37 @@ void makePixel(int x, int y, int r, int g, int b, GLubyte* pixels, int width, in
     }
 }
 
-// Função que monta a fractal de mandelbrot na forma sequencial
-void mandelbrotSequencial() {
-    for(int x = 0; x < WindowMatrixPlot.width; x++) {
-        for(int y = 0; y < WindowMatrixPlot.height; y++) {
-            double a = map(x, 0, WindowMatrixPlot.width,
-                -2.5 * WindowMatrixPlot.zoom + WindowMatrixPlot.XOffset,
-                0.5 * WindowMatrixPlot.zoom + WindowMatrixPlot.XOffset);
-            double b = map(y, 0, WindowMatrixPlot.height,
-                -1.5 * WindowMatrixPlot.zoom + WindowMatrixPlot.YOffset,
-                1.5 * WindowMatrixPlot.zoom + WindowMatrixPlot.YOffset);
-            
-            double ca = a;
-            double cb = b;
+void render(int n, double* estado) {
+  int barHeight = HEIGHT/3;
+  int nodeWidth = WIDTH/n;
+  int node = -1;
+  // printf("nodeWidth = %d\n", nodeWidth);
 
-            int n = 0;
+  for(int x = 0; x < WIDTH; x++) {
+    for(int y = 0; y < HEIGHT; y++) {
+      if(y >= barHeight && y < barHeight*2) {
+        if(x % nodeWidth == 0 && y == barHeight) node++;
 
-            while (n < MAX_ITERATIONS) {
-                double aa = a*a - b*b;
-                double bb = 2 * a * b;
-
-                a = aa + ca;
-                b = bb + cb;
-                if(a*a + b*b > 4) {
-                    break;
-                }
-                n++;
-            }
-            
-            // Controla o brilho de cada pixel, dependendo do número de iterações
-            double bright = map(n, 0, MAX_ITERATIONS, 0, MAX_BRIGHT_LENGTH);
-            bright = map(sqrt(bright), 0, MAX_BRIGHT_LENGTH, 0, 255);
-            if(n == MAX_ITERATIONS) {
-                bright = 0;
-            }
-
-            // Pinta os pixels na janela
-            // makePixel(
-            //     x, y, 
-            //     bright, bright, bright,
-            //     PixelBuffer, WIDTH, HEIGHT
-            // );
-
-            // Monta a matriz de pixels da forma sequencial para testar no final
-            int position = (x + y * WIDTH) * 3;
-            mtxtestseq[position] = bright;
-            mtxtestseq[position + 1] = bright;
-            mtxtestseq[position + 2] = bright;
-        }
+        double bright = map(estado[node], 0, 20, 0, 255);
+        // printf("bright = %lf\n", estado[node]);
+        makePixel(
+          x, y, 
+          bright, 0, 255.0-bright,
+          PixelBuffer, WIDTH, HEIGHT
+        );
+      } else {
+        makePixel(
+          x, y, 
+          0, 0, 0,
+          PixelBuffer, WIDTH, HEIGHT
+        );
+      }
     }
+  }
 }
 
 int main() {
-  int n = 100, nt = 10;
+  int n = 30, nt = 200;
   double L, dx, dt, k, r;
 
   double **A = create_matrix(n, n);
@@ -392,7 +371,7 @@ int main() {
       return -1;
 
   // Criando a janela e seu contexto OpenGL
-  window = glfwCreateWindow(WIDTH, HEIGHT, "Mandelbrot", NULL, NULL);
+  window = glfwCreateWindow(WIDTH, HEIGHT, "Difusão de Calor", NULL, NULL);
   if (!window)
   {
       glfwTerminate();
@@ -401,32 +380,6 @@ int main() {
 
   // Cria o contexto atual da janela
   glfwMakeContextCurrent(window);
-
-  int frame = 1;
-
-  while (!glfwWindowShouldClose(window)){
-    // Configuração da visualização
-    mtxposition = -1;
-    glfwGetFramebufferSize(window, &WindowMatrixPlot.width, &WindowMatrixPlot.height);
-    glViewport(0, 0, WindowMatrixPlot.width, WindowMatrixPlot.height);
-
-
-    mandelbrotSequencial();
-
-    frame++;
-    glClear(GL_COLOR_BUFFER_BIT);
-
-    // Desenhando
-    glDrawPixels(WIDTH, HEIGHT, GL_RGB, GL_UNSIGNED_BYTE, PixelBuffer);
-
-    // Funções necesárias para o funcionamento da biblioteca que desenha os pixels
-    glfwSwapBuffers(window);
-    glfwPollEvents();
-
-    WindowMatrixPlot.zoom *= 0.75;
-    if(frame == 100) break;
-}
-
 
   L = 1.0;
   dx = L/10.0;
@@ -439,11 +392,11 @@ int main() {
     estados[0][i] = 20;
   }
 
-  // preencheMatrizCalorA(n, A, r);
-  // preencheMatrizCalorB(n, B, r);
+  preencheMatrizCalorA(n, A, r);
+  preencheMatrizCalorB(n, B, r);
 
-  // mult_matriz_vec(n, B, u, b);
-  // SOLVE_LU(n, A, b, X);
+  mult_matriz_vec(n, B, u, b);
+  SOLVE_LU(n, A, b, X);
 
   // for(int t = 1; t < nt; t++) {
   //   for(int i = 0; i < n; i++) {
@@ -460,5 +413,39 @@ int main() {
   //   print_vector(estados[t], n);
   //   printf("\n");
   // }
+  int teste;
+  int frame = 1;
+  while (!glfwWindowShouldClose(window)){
+    // Configuração da visualização
+    mtxposition = -1;
+    glfwGetFramebufferSize(window, &WindowMatrixPlot.width, &WindowMatrixPlot.height);
+    glViewport(0, 0, WindowMatrixPlot.width, WindowMatrixPlot.height);
+
+
+    for(int i = 0; i < n; i++) {
+      u[i] = X[i];
+      estados[frame][i] = X[i];
+    }
+    mult_matriz_vec(n, B, u, b);
+
+    SOLVE_LU(n, A, b, X);
+
+    // Pinta os pixels na janela
+    render(n, estados[frame]);
+
+    frame++;
+    glClear(GL_COLOR_BUFFER_BIT);
+
+    // Desenhando
+    glDrawPixels(WIDTH, HEIGHT, GL_RGB, GL_UNSIGNED_BYTE, PixelBuffer);
+
+    // Funções necesárias para o funcionamento da biblioteca que desenha os pixels
+    glfwSwapBuffers(window);
+    glfwPollEvents();
+
+    if(frame == nt) break;
+  }
+
+
   return 0;
 }
