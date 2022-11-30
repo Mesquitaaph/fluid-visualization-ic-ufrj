@@ -1,5 +1,10 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include <math.h>
+#include <GLFW/glfw3.h>
+
+#define WIDTH 600
+#define HEIGHT 600
 
 void print_matrix(double** A, int n, int m) {
   for(int i = 0; i < n; i++) {
@@ -255,6 +260,118 @@ void preencheMatrizCalorB(int n, double** B, double r) {
   }
 }
 
+// Tipo que armazena as coordenadas de um pixel
+typedef struct mtx_coords {
+    int x;
+    int y;
+} t_coords;
+
+// Tipo que armazena configurações do plot da fractal na janela
+typedef struct window_plot {
+    double zoom;
+    double XOffset;
+    double YOffset;
+    int width, height;
+} t_plot;
+
+GLubyte PixelBuffer[WIDTH * HEIGHT * 3];
+
+// Matrizes para testar a corretude da forma concorrente do programa
+int mtxtestseq[WIDTH * HEIGHT * 3];
+int mtxtestconc[WIDTH * HEIGHT * 3];
+
+// Atribuindo configurações do programa
+t_plot WindowMatrixPlot = {0.001, -1.2506, 0.041, WIDTH, HEIGHT};
+int N_THREADS;
+int MAX_ITERATIONS;
+double MAX_BRIGHT_LENGTH;
+
+// Variável que armazena o andamento do programa na matriz
+int mtxposition;
+
+// Recebe o "andamento" da matriz e define a coordenada de onde está
+void nextMatrixLocation(int mtxposition, t_coords* fractalMatrixLocation) {
+    int x = mtxposition % WIDTH;
+    int y = mtxposition / WIDTH;
+
+    fractalMatrixLocation->x = x;
+    fractalMatrixLocation->y = y;
+}
+
+// Recebe um valor pertencente a um intervalo [min,max] e retorna o valor transformado
+// para o intervalo [floor,ceil]
+double map(double value, double min, double max, double floor, double ceil) {
+    return floor + (ceil - floor) * ((value - min) / (max - min));
+}
+
+// "Pinta" os pixels, definidos em PixelBuffer, na janela do programa
+void display(GLFWwindow *window) {
+    glClear(GL_COLOR_BUFFER_BIT);
+    glDrawPixels(WIDTH, HEIGHT, GL_RGB, GL_UNSIGNED_BYTE, PixelBuffer);
+    glfwSwapBuffers(window);
+}
+
+// Atribui ao pixel na posição (x,y) a cor [r,g,b]
+void makePixel(int x, int y, int r, int g, int b, GLubyte* pixels, int width, int height) {
+    if (0 <= x && x < width && 0 <= y && y < height) {
+        int position = (x + y * width) * 3;
+        pixels[position] = r;
+        pixels[position + 1] = 0;
+        pixels[position + 2] = b;
+    }
+}
+
+// Função que monta a fractal de mandelbrot na forma sequencial
+void mandelbrotSequencial() {
+    for(int x = 0; x < WindowMatrixPlot.width; x++) {
+        for(int y = 0; y < WindowMatrixPlot.height; y++) {
+            double a = map(x, 0, WindowMatrixPlot.width,
+                -2.5 * WindowMatrixPlot.zoom + WindowMatrixPlot.XOffset,
+                0.5 * WindowMatrixPlot.zoom + WindowMatrixPlot.XOffset);
+            double b = map(y, 0, WindowMatrixPlot.height,
+                -1.5 * WindowMatrixPlot.zoom + WindowMatrixPlot.YOffset,
+                1.5 * WindowMatrixPlot.zoom + WindowMatrixPlot.YOffset);
+            
+            double ca = a;
+            double cb = b;
+
+            int n = 0;
+
+            while (n < MAX_ITERATIONS) {
+                double aa = a*a - b*b;
+                double bb = 2 * a * b;
+
+                a = aa + ca;
+                b = bb + cb;
+                if(a*a + b*b > 4) {
+                    break;
+                }
+                n++;
+            }
+            
+            // Controla o brilho de cada pixel, dependendo do número de iterações
+            double bright = map(n, 0, MAX_ITERATIONS, 0, MAX_BRIGHT_LENGTH);
+            bright = map(sqrt(bright), 0, MAX_BRIGHT_LENGTH, 0, 255);
+            if(n == MAX_ITERATIONS) {
+                bright = 0;
+            }
+
+            // Pinta os pixels na janela
+            // makePixel(
+            //     x, y, 
+            //     bright, bright, bright,
+            //     PixelBuffer, WIDTH, HEIGHT
+            // );
+
+            // Monta a matriz de pixels da forma sequencial para testar no final
+            int position = (x + y * WIDTH) * 3;
+            mtxtestseq[position] = bright;
+            mtxtestseq[position + 1] = bright;
+            mtxtestseq[position + 2] = bright;
+        }
+    }
+}
+
 int main() {
   int n = 100, nt = 10;
   double L, dx, dt, k, r;
@@ -268,6 +385,49 @@ int main() {
   for(int t = 0; t < nt; t++) {
     estados[t] = (double*) malloc(n*sizeof(double));
   }
+
+  GLFWwindow* window;
+  // Inicializando a biblioteca
+  if (!glfwInit())
+      return -1;
+
+  // Criando a janela e seu contexto OpenGL
+  window = glfwCreateWindow(WIDTH, HEIGHT, "Mandelbrot", NULL, NULL);
+  if (!window)
+  {
+      glfwTerminate();
+      return -1;
+  }
+
+  // Cria o contexto atual da janela
+  glfwMakeContextCurrent(window);
+
+  int frame = 1;
+
+  while (!glfwWindowShouldClose(window)){
+    // Configuração da visualização
+    mtxposition = -1;
+    glfwGetFramebufferSize(window, &WindowMatrixPlot.width, &WindowMatrixPlot.height);
+    glViewport(0, 0, WindowMatrixPlot.width, WindowMatrixPlot.height);
+
+
+    mandelbrotSequencial();
+
+    frame++;
+    glClear(GL_COLOR_BUFFER_BIT);
+
+    // Desenhando
+    glDrawPixels(WIDTH, HEIGHT, GL_RGB, GL_UNSIGNED_BYTE, PixelBuffer);
+
+    // Funções necesárias para o funcionamento da biblioteca que desenha os pixels
+    glfwSwapBuffers(window);
+    glfwPollEvents();
+
+    WindowMatrixPlot.zoom *= 0.75;
+    if(frame == 100) break;
+}
+
+
   L = 1.0;
   dx = L/10.0;
   dt = 0.1;
@@ -279,26 +439,26 @@ int main() {
     estados[0][i] = 20;
   }
 
-  preencheMatrizCalorA(n, A, r);
-  preencheMatrizCalorB(n, B, r);
+  // preencheMatrizCalorA(n, A, r);
+  // preencheMatrizCalorB(n, B, r);
 
-  mult_matriz_vec(n, B, u, b);
-  SOLVE_LU(n, A, b, X);
+  // mult_matriz_vec(n, B, u, b);
+  // SOLVE_LU(n, A, b, X);
 
-  for(int t = 1; t < nt; t++) {
-    for(int i = 0; i < n; i++) {
-      u[i] = X[i];
-      estados[t][i] = X[i];
-    }
-    mult_matriz_vec(n, B, u, b);
+  // for(int t = 1; t < nt; t++) {
+  //   for(int i = 0; i < n; i++) {
+  //     u[i] = X[i];
+  //     estados[t][i] = X[i];
+  //   }
+  //   mult_matriz_vec(n, B, u, b);
 
-    SOLVE_LU(n, A, b, X);
-  }
+  //   SOLVE_LU(n, A, b, X);
+  // }
   
-  for(int t = 0; t < nt; t++) {
-    printf("Vector t%d = \n", t);
-    print_vector(estados[t], n);
-    printf("\n");
-  }
+  // for(int t = 0; t < nt; t++) {
+  //   printf("Vector t%d = \n", t);
+  //   print_vector(estados[t], n);
+  //   printf("\n");
+  // }
   return 0;
 }
