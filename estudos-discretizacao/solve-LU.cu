@@ -1,5 +1,9 @@
 #include <stdio.h>
+#include <stdlib.h>
 #include <time.h>
+extern "C" {
+#include "solve-LU.h"
+}
 
 #define N 1000
 #define TAM_BLOCO 20
@@ -294,6 +298,65 @@ int mult_matriz_vec(int n, double* A, double* X, double* b) {
   return 1;
 }
 
+extern "C" void solveMatrix(int dim_mat, double** m, double* b, double* X) {
+  printf("TESTEEE\n");
+  double *src_m, *d_m, *L, *U;
+
+  // adicionar c´odigo para inicializar a vari´avel
+  // dim_mat ( dimens~ao da matriz )
+  unsigned long long quant_mem = dim_mat * dim_mat * sizeof(double);
+  src_m = (double*) malloc(quant_mem);
+  L = (double*) malloc(quant_mem);
+  U = (double*) malloc(quant_mem);
+  if(L == NULL || U == NULL) {
+    fprintf(stderr, "Memoria insuficiente\n");
+    exit(EXIT_FAILURE);
+  }
+
+  for(int i = 0; i < dim_mat; i++){
+    for(int j = 0; j < dim_mat; j++){
+      src_m[i*dim_mat + j] = m[i][j];
+    }
+  }
+
+  // alocar mem´oria na GPU para copiar a matriz
+  CUDA_SAFE_CALL(cudaMalloc((void**)&d_m, quant_mem));
+
+  // copiar a matriz para a GPU
+  CUDA_SAFE_CALL(cudaMemcpy(d_m, src_m, quant_mem, cudaMemcpyHostToDevice));
+
+  alg_lu_gpu(d_m, dim_mat);
+
+  // copiar o resultado da GPU para a CPU
+  CUDA_SAFE_CALL(cudaMemcpy(src_m, d_m, quant_mem, cudaMemcpyDeviceToHost));
+
+  // limpar a mem´oria da GPU
+  CUDA_SAFE_CALL(cudaFree(d_m));
+
+  for(int i = 0; i < dim_mat; i++) {
+    for(int j = 0; j < dim_mat; j++) {
+      if(j >= i) {
+        U[i*dim_mat + j] = src_m[i*dim_mat + j];
+      } else {
+        U[i*dim_mat + j] = 0.0;
+      }
+    }
+  }
+
+  for(int i = 0; i < dim_mat; i++) {
+    for(int j = 0; j < dim_mat; j++) {
+      if(j < i) {
+        L[i*dim_mat + j] = src_m[i*dim_mat + j];
+      } else if(j == i) {
+        L[i*dim_mat + j] = 1.0;
+      } else {
+        L[i*dim_mat + j] = 0.0;
+      }
+    }
+  }
+  SOLVE_LU(dim_mat, b, X, L, U);
+}
+
 int main (int argc, char *argv[]) {
   int dim_mat = atoi(argv[1]);
   double *m, *d_m, *L, *U, *Ls, *Us, *b, *X, *Xs, *Xref;
@@ -418,3 +481,4 @@ int main (int argc, char *argv[]) {
   CUDA_SAFE_CALL(cudaDeviceReset());
   exit(EXIT_SUCCESS);
 }
+

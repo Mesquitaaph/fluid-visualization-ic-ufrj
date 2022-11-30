@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <math.h>
 #include <GLFW/glfw3.h>
+// #include "solve-LU.h"
 
 #define WIDTH 600
 #define HEIGHT 600
@@ -396,6 +397,7 @@ int main() {
   preencheMatrizCalorB(n, B, r);
 
   mult_matriz_vec(n, B, u, b);
+  // solveMatrix(n, A, b, X);
   SOLVE_LU(n, A, b, X);
 
   // for(int t = 1; t < nt; t++) {
