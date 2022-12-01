@@ -417,7 +417,8 @@ int main() {
   //   print_vector(estados[t], n);
   //   printf("\n");
   // }
-  int teste;
+  int initSim;
+  scanf("%c", &initSim);
   int frame = 1;
   while (!glfwWindowShouldClose(window)){
     // Configuração da visualização
