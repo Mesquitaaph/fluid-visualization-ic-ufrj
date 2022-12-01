@@ -233,6 +233,8 @@ void SOLVE_LU(int n, double** A, double* b, double* X) {
 
   // Resolve o sistema UX = c
   RESOLVE_TRIANGULAR_SUPERIOR(n, U, c, X);
+  desalocaMatriz(L, n);
+  desalocaMatriz(U, n);
 }
 
 void preencheMatrizCalorA(int n, double** A, double r) {
