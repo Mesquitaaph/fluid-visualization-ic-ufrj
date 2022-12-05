@@ -4,3 +4,6 @@ gcc .\calor.c -o .\calor.exe -lopengl32 -lgdi32 -luser32 -lkernel32 -lglfw3 -lgl
 verificar esse doc no ubuntu
 http://geminiweb.slu.edu/wp-content/uploads/CUDA_Getting_Started_Linux.pdf
 pag 20
+
+compilando calor.cu no Ubuntu
+nvcc -o calor_gpu calor.cu -lglut -lGL -lGLU -lglfw
