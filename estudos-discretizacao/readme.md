@@ -7,3 +7,6 @@ pag 20
 
 compilando calor.cu no Ubuntu
 nvcc -o calor_gpu calor.cu -lglut -lGL -lGLU -lglfw
+
+nvcc -c solve-LU.cu "calor1d/calor.cu"
+nvcc -o calor solve-LU.o "calor.o" -lglut -lGL -lGLU -lglfw
