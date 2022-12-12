@@ -2,6 +2,7 @@
 *.exp
 *.lib
 *.pdf
+*.dll
 .vscode
 Notas Dissertação Wesley.md
 /Tafera 6 - CalcNum
