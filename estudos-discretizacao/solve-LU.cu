@@ -298,7 +298,6 @@ int mult_matriz_vec(int n, double* A, double* X, double* b) {
 }
 
 void solveMatrix(int dim_mat, double** m, double* b, double* X) {
-  printf("TESTEEE\n");
   double *src_m, *d_m, *L, *U;
 
   // adicionar c´odigo para inicializar a vari´avel
@@ -354,7 +353,7 @@ void solveMatrix(int dim_mat, double** m, double* b, double* X) {
     }
   }
   SOLVE_LU(dim_mat, b, X, L, U);
-  free(src_m); free(d_m); free(L); free(U);
+  free(src_m); free(L); free(U);
 }
 
 // int main (int argc, char *argv[]) {

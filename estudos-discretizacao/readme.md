@@ -10,3 +10,6 @@ nvcc -o calor_gpu calor.cu -lglut -lGL -lGLU -lglfw
 
 nvcc -c solve-LU.cu "calor1d/calor.cu"
 nvcc -o calor solve-LU.o "calor.o" -lglut -lGL -lGLU -lglfw
+
+nvcc -c solve-LU.cu "calor2d/calor2d_lu.cu"
+nvcc -o calor solve-LU.o "calor2d_lu.o" -lglut -lGL -lGLU -lglfw
