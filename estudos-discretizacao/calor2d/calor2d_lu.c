@@ -10,7 +10,7 @@
 void print_matrix(double** A, int n, int m) {
   for(int i = 0; i < n; i++) {
     for(int j = 0; j < m; j++) {
-      printf("%lf ", A[i][j]);
+      printf("%.4lf ", A[i][j]);
     }
     printf("\n");
   }
@@ -38,7 +38,7 @@ double** create_matrix(int n, int m) {
   for(int i = 0; i < n; i++) {
     mtx[i] = (double*) malloc(m*sizeof(double));
     for(int j = 0; j < m; j++) {
-      mtx[i][j] = 0;
+      mtx[i][j] = 0.0;
     }
   }
   return mtx;
@@ -168,7 +168,7 @@ void DECOMPOSICAO_LU(int n, double** A, double** rL, double** rU) {
   double **Id = create_id_matrix(n); // Matriz identidade nxn
   double **L = create_id_matrix(n); // Inicializando a matriz L com a matriz identidade
   double **U = copy_matrix(A, n, n); // Inicializando a matriz U com a matriz A
-
+  // print_matrix(U,n,n);
   // Neste laço montamos as matrizes L e U
   // Sendo U o resultado de aplicar a eliminação gaussiana em A
   // e L o inverso da matriz que multiplica A para obter U
@@ -177,7 +177,7 @@ void DECOMPOSICAO_LU(int n, double** A, double** rL, double** rU) {
       // Acha o fator que multiplica a linha i
       // para fazer o elemento U[j,i] = 0
       double k = -U[j][i] / U[i][i];
-
+      // printf("k = %lf\n", k);
       // Expressão matricial, na matriz U, equivalente a multiplicar
       // a linha i por k e somar na linha j
       double **eji = E(n, j, i);
@@ -209,6 +209,9 @@ void DECOMPOSICAO_LU(int n, double** A, double** rL, double** rU) {
       mult_matrizes(n, aux2, aux1, L);
 
       // L = L * (Id - k*E(j,i))
+      desalocaMatriz(aux1, n);
+      desalocaMatriz(aux2, n);
+      desalocaMatriz(eji, n);
     }
   }
 
@@ -231,12 +234,14 @@ void SOLVE_LU(int n, double** A, double* b, double* X) {
 
   // Decompõe A = LU
   DECOMPOSICAO_LU(n, A, L, U);
+  // print_matrix(L, n, n);
 
   // Resolve o sistema Lc = b
   RESOLVE_TRIANGULAR_INFERIOR(n, L, b, c);
 
   // Resolve o sistema UX = c
   RESOLVE_TRIANGULAR_SUPERIOR(n, U, c, X);
+  free(c);
   desalocaMatriz(L, n);
   desalocaMatriz(U, n);
 }
@@ -314,15 +319,17 @@ void render2D(int n, double** estado) {
     node_y = -1;
     for(int y = 0; y < HEIGHT; y++) {
       if(y % nodeHeight == 0) node_y++;
-
       double bright = map(estado[node_x][node_y], 0, 20, 0, 255);
+      // printf("node_x = %d, node_y = %d\n", node_x, node_y);
       makePixel(
         x, y, 
         bright, 0, 255.0-bright,
         PixelBuffer, WIDTH, HEIGHT
       );
     }
+    // printf("TESTE x = %d, node_x = %d\n", x, node_x);
   }
+
 }
 
 int e_N(int i) {
@@ -341,37 +348,46 @@ int e_E(int j, int n) {
   return 0 ? j == n-2 : 1;
 }
 
-double nova_temp_aux(int n, double** T, int i, int j, int r) {
-  if(i == 0 || i == n-1 || j == 0 || j == n-1) return 0.0;
-  double cond_terms = e_S(i, n)*T[i+1][j] + e_N(i)*T[i-1][j] + e_E(j, n)*T[i][j+1] + e_W(j)*T[i][j-1];
-  return ((2-4*r)*T[i][j] + r*cond_terms)/2;
+void preencheMatrizCalorA(int n, double** A, double r) {
+  A[0][0] = 2+2*r;
+  A[0][1] = -r;
+  A[n-1][n-2] = -r;
+  A[n-1][n-1] = 2+2*r;
+
+  for(int i = 1; i < n-1; i++) {
+    A[i][i-1] = -r;
+    A[i][i] = 2+2*r;
+    A[i][i+1] = -r;
+  }
 }
 
-void nova_temp(int n, double** T, double** Tn, int i, int j, int r) {
-  double cond_terms_n = e_S(i, n)*T[i+1][j] + e_N(i)*T[i-1][j] + e_E(j, n)*T[i][j+1] + e_W(j)*T[i][j-1];
-  double cond_terms_n1 = 
-    nova_temp_aux(n, T, i+1, j, r) + 
-    nova_temp_aux(n, T, i-1, j, r) + 
-    nova_temp_aux(n, T, i, j+1, r) + 
-    nova_temp_aux(n, T, i, j-1, r);
-  Tn[i][j] = ((2-4*r)*T[i][j] + r*(cond_terms_n + cond_terms_n1))/(2+4*r);
+void preencheMatrizCalorB(int n, double** B, double r) {
+  B[0][0] = 2-2*r;
+  B[0][1] = r;
+  B[n-1][n-2] = r;
+  B[n-1][n-1] = 2-2*r;
+
+  for(int i = 1; i < n-1; i++) {
+    B[i][i-1] = r;
+    B[i][i] = 2-2*r;
+    B[i][i+1] = r;
+  }
 }
 
 double sol_analitica(double x, double y, double t, double k) {
-  double pi = 3.141592653589793;
-  double max = 50.0;
+  double pi = 3.14159265359;
+  int max = 2000;
 
   double sum = 0;
-  for(double m = 1; m < max; m++) {
-    double mu = (m*pi);
+  for(int m = 1; m < max; m++) {
+    double mu = (m*pi)/1;
 
-    for(double n = 1; n < max; n++) {
-      double Amn = (80.0*(pow(-1, n-1)+1)*(pow(-1, m-1) + 1))/(pi*pi*m*n);
-      double v = (n*pi);
-      // printf("v = %lf\n", v);
+    for(int n = 1; n < max; n++) {
+      double Amn = (80*(pow(-1, n-1)+1)*(pow(-1, m-1) + 1))/(pi*pi*m*n);
+      double v = (n*pi)/1;
       double lambda = sqrt(k)*sqrt(mu*mu + v*v);
 
-      sum += Amn*sin(mu*x)*sin(v*y)*exp(-1.0*lambda*lambda*t);
+      sum += Amn*sin(mu*x)*sin(v*y)*exp(-lambda*lambda*t);
     }
   }
 
@@ -379,27 +395,33 @@ double sol_analitica(double x, double y, double t, double k) {
 }
 
 int main() {
-  int n = 100, nt = 200;
+  int n = 30, nt = 200;
   double L, dx, dt, k, r;
 
+  double **A = create_matrix(n, n);
+  double **B = create_matrix(n, n);
+  double *X = (double*) malloc(n*sizeof(double));
+  double *b = (double*) malloc(n*sizeof(double));
+  double *aux = (double*) malloc(n*sizeof(double));
   double **T = create_matrix(n, n);
+  double **T_intermed = create_matrix(n, n);
   double **Tn = create_matrix(n, n);
 
-  // GLFWwindow* window;
-  // // Inicializando a biblioteca
-  // if (!glfwInit())
-  //   return -1;
+  GLFWwindow* window;
+  // Inicializando a biblioteca
+  if (!glfwInit())
+    return -1;
 
-  // // Criando a janela e seu contexto OpenGL
-  // window = glfwCreateWindow(WIDTH, HEIGHT, "Difusão de Calor 2d", NULL, NULL);
-  // if (!window)
-  // {
-  //     glfwTerminate();
-  //     return -1;
-  // }
+  // Criando a janela e seu contexto OpenGL
+  window = glfwCreateWindow(WIDTH, HEIGHT, "Difusão de Calor 2d", NULL, NULL);
+  if (!window)
+  {
+      glfwTerminate();
+      return -1;
+  }
 
-  // // // Cria o contexto atual da janela
-  // glfwMakeContextCurrent(window);
+  // Cria o contexto atual da janela
+  glfwMakeContextCurrent(window);
 
   L = 1.0;
   dx = L/10.0;
@@ -407,61 +429,113 @@ int main() {
   k = 0.12;
   r = dt*k/(dx*dx);
 
-  for(int i = 1; i < n-1; i++) {
-    for(int j = 1; j < n-1; j++) {
+  for(int i = 0; i < n; i++) {
+    for(int j = 0; j < n; j++) {
+      // if(i == 0 || j == 0 || i == n-1 || j == n-1) {
+      //   T[i*n + j] = 0.0;
+      //   continue;
+      // }
       T[i][j] = 20.0;
     }
   }
 
-  double erro_aprox = 20.0 - sol_analitica(0.5, 0.5, 0, k);
-  for(int t = 0; t < 100; t++) {
-    for(int i = 1; i < n-1; i++) {
-      for(int j = 1; j < n-1; j++) {
-        nova_temp(n, T, Tn, i, j, r);
-      }
-    }
-    printf("SOL_APX = %lf\n", T[n/2][n/2]);
-    printf("SOL_ANL = %lf\n\n", sol_analitica(0.5, 0.5, t*0.1, k));
+  preencheMatrizCalorA(n, A, r);
+  preencheMatrizCalorB(n, B, r);
 
-    copy_alloc_matrix(Tn, T, n, n);
-  }
+  
+  // for(int j = 0; j < n; j++) {
+  //   for(int i = 0; i < n; i++) {
+  //     aux[i] = T[i][j];
+  //   }
+  //   mult_matriz_vec(n, B, aux, b);
+  //   SOLVE_LU(n, A, b, X);
+  //   for(int i = 0; i < n; i++) {
+  //     T_intermed[i][j] = X[i];
+  //   }
+  // }
+
+  // for(int i = 0; i < n; i++) {
+  //   for(int j = 0; j < n; j++) {
+  //     aux[j] = T_intermed[i][j];
+  //   }
+  //   mult_matriz_vec(n, B, aux, b);
+  //   SOLVE_LU(n, A, b, X);
+  //   for(int j = 0; j < n; j++) {
+  //     Tn[i][j] = X[j];
+  //   }
+  // }
+
+  // copy_alloc_matrix(Tn, T, n, n);
+
+  // print_matrix(Tn, n, n);
+
+  // Verifica corretude da aproximação
+  // for(double i = 0; i < n; i++) {
+  //   for(double j = 0; j < n; j++) {
+  //     double tam = (double)n+1.0;  
+  //     double erro_aprox = sol_analitica((i+1.0)/tam, (j+1.0)/tam, 0.1, k);
+  //     printf("%.4lf ", erro_aprox);
+  //   }
+  //   printf("\n");
+  // }
+
+  // solveMatrix(n, A, b, X);
+  // print_vector(b, n*n);
+
   // char initSim;
   // scanf("%c", &initSim);
   int frame = 1;
-  // while (!glfwWindowShouldClose(window)){
-  //   // Configuração da visualização
-  //   glfwGetFramebufferSize(window, &WindowMatrixPlot.width, &WindowMatrixPlot.height);
-  //   glViewport(0, 0, WindowMatrixPlot.width, WindowMatrixPlot.height);
-  //   for(int i = 1; i < n-1; i++) {
-  //     for(int j = 1; j < n-1; j++) {
-  //       nova_temp(n, T, Tn, i, j, r);
-  //     }
+  while (!glfwWindowShouldClose(window)){
+    // Configuração da visualização
+    glfwGetFramebufferSize(window, &WindowMatrixPlot.width, &WindowMatrixPlot.height);
+    glViewport(0, 0, WindowMatrixPlot.width, WindowMatrixPlot.height);
+    for(int j = 0; j < n; j++) {
+      for(int i = 0; i < n; i++) {
+        aux[i] = T[i][j];
+      }
+      mult_matriz_vec(n, B, aux, b);
+      SOLVE_LU(n, A, b, X);
+      for(int i = 0; i < n; i++) {
+        T_intermed[i][j] = X[i];
+      }
+    }
+
+    for(int i = 0; i < n; i++) {
+      for(int j = 0; j < n; j++) {
+        aux[j] = T_intermed[i][j];
+      }
+      mult_matriz_vec(n, B, aux, b);
+      SOLVE_LU(n, A, b, X);
+      for(int j = 0; j < n; j++) {
+        Tn[i][j] = X[j];
+      }
+    }
+
+
+    // Pinta os pixels na janela
+    render2D(n, T);
+    // printf("TESTE\n");
+    copy_alloc_matrix(Tn, T, n, n);
+
+    frame++;
+    glClear(GL_COLOR_BUFFER_BIT);
+
+    // Desenhando
+    glDrawPixels(WIDTH, HEIGHT, GL_RGB, GL_UNSIGNED_BYTE, PixelBuffer);
+
+    // Funções necesárias para o funcionamento da biblioteca que desenha os pixels
+    glfwSwapBuffers(window);
+    glfwPollEvents();
+
+    if(frame == nt) break;
+  }
+
+  // for(int i = 0; i <= n; i++) {
+  //   for(int j = 0; j <= n; j++) {
+  //     printf("%lf ", T[i][j] - sol_analitica(i/n, j/n, frame*dt, k));
   //   }
-
-
-  //   // Pinta os pixels na janela
-  //   render2D(n, T);
-  //   copy_alloc_matrix(Tn, T, n, n);
-
-  //   frame++;
-  //   glClear(GL_COLOR_BUFFER_BIT);
-
-  //   // Desenhando
-  //   glDrawPixels(WIDTH, HEIGHT, GL_RGB, GL_UNSIGNED_BYTE, PixelBuffer);
-
-  //   // Funções necesárias para o funcionamento da biblioteca que desenha os pixels
-  //   glfwSwapBuffers(window);
-  //   glfwPollEvents();
-
-  //   if(frame == nt) break;
+  //   printf("\n");
   // }
-
-  // // for(int i = 0; i <= n; i++) {
-  // //   for(int j = 0; j <= n; j++) {
-  // //     printf("%lf ", T[i][j] - sol_analitica(i/n, j/n, frame*dt, k));
-  // //   }
-  // //   printf("\n");
-  // // }
 
   // printf("aprox = %lf, sol = %lf\n", T[49][49], sol_analitica(0.5, 0.5, frame*dt, k*k));
 
