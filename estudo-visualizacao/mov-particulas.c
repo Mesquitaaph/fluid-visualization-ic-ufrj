@@ -6,7 +6,7 @@
 
 #define WIDTH 260
 #define HEIGHT WIDTH
-#define N_PARTICULAS 1024
+#define N_PARTICULAS 4096
 
 typedef struct Particula {
   double x, y, vx, vy;
@@ -159,6 +159,8 @@ void read_file_2(char * file_name, t_particula **velocidades){
     int_i = atoi(i), int_j = atoi(j);
 
     
+    // if(var == 'x') velocidades[514-int_j][int_i+1].vx = vel; // 1 -> 514
+    // if(var == 'y') velocidades[514-int_j][int_i+1].vy = vel;
     if(var == 'x') velocidades[int_i+1][int_j+1].vx = vel;
     if(var == 'y') velocidades[int_i+1][int_j+1].vy = vel;
     
@@ -229,7 +231,7 @@ void render(t_particula** velocidades, t_particula *particulas) {
   for(int z = 0; z < N_PARTICULAS; z++) {
     t_particula p = particulas[z];
     int x = p.x;
-    int y = p.y;
+    int y = HEIGHT - p.y;
 
     for(int i = -tam_p; i <= tam_p; i++) {
       for(int j = -tam_p; j <= tam_p; j++) {
@@ -276,7 +278,7 @@ void atualiza_particulas(double dt, int n_dim, t_particula** A, t_particula* par
     t_particula p = particulas[i];
 
     int x = p.x;
-    int y = p.y;
+    int y = HEIGHT - p.y;
 
     // Limpa o espaco em que a particula estava
     for(int i = -tam_p; i <= tam_p; i++) {
@@ -289,7 +291,7 @@ void atualiza_particulas(double dt, int n_dim, t_particula** A, t_particula* par
       }
     }
 
-    t_particula pvel = A[(int)p.x][(int)p.y];
+    t_particula pvel = A[WIDTH - (int)p.y][(int)p.x];
 
     particulas[i].vx = pvel.vx;
     particulas[i].vy = pvel.vy;
@@ -308,7 +310,7 @@ void atualiza_particulas(double dt, int n_dim, t_particula** A, t_particula* par
 
 int main(int argc, char** argv) {
   int n_dim = WIDTH, nt = 20000;
-  double dt = 0.8;//0.0019073486;
+  double dt = 1.5;//0.0019073486;
   t_particula **A = create_matrix(n_dim, n_dim);
 
   t_particula particulas[N_PARTICULAS];
@@ -317,8 +319,8 @@ int main(int argc, char** argv) {
 
     // particulas[i].x = WIDTH*0.9;
     // particulas[i].y = HEIGHT*0.1;
-    particulas[i].x = (i % sq) * WIDTH/sq;
-    particulas[i].y = (i / sq) * HEIGHT/sq;
+    particulas[i].x = 2 + (i % sq) * (WIDTH-2)/sq;
+    particulas[i].y = 2 + (i / sq) * (HEIGHT-2)/sq;
     particulas[i].vx = 0;
     particulas[i].vy = 0;
   }

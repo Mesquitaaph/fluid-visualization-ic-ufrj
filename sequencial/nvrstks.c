@@ -10,7 +10,7 @@
 #define SQR(x) (x*x)
 
 #define WIDTH 256
-#define HEIGHT 256
+#define HEIGHT WIDTH
 #define N_PARTICULAS 128
 
 typedef struct Particula {
@@ -145,7 +145,7 @@ void atualiza_particulas(double dt, /*int n_dim,*/ POINT** velocidades, t_partic
     //   }
     // }
 
-    POINT pvel = velocidades[(int)p.x][(int)p.y];
+    POINT pvel = velocidades[WIDTH-(int)p.y][(int)p.x];
 
     particulas[i].vx = pvel.vx;
     particulas[i].vy = pvel.vy;
@@ -709,8 +709,8 @@ int main(int argc, char** argv) {
   for(int i = 0; i < N_PARTICULAS; i++) {
     int sq = (int)sqrt(N_PARTICULAS);
 
-    particulas[i].x = (i % sq) * WIDTH/sq;
-    particulas[i].y = (i / sq) * HEIGHT/sq;
+    particulas[i].x = 2+(i % sq) * (WIDTH-2)/sq;
+    particulas[i].y = 2+(i / sq) * (HEIGHT-2)/sq;
     particulas[i].vx = 0;
     particulas[i].vy = 0;
   }
@@ -739,10 +739,10 @@ int main(int argc, char** argv) {
     glViewport(0, 0, WindowMatrixPlot.width, WindowMatrixPlot.height);
 
     // Atualiza a posicao de cada uma das particulas
-    // atualiza_particulas(ant_del_time, matrix, particulas);
+    atualiza_particulas(ant_del_time, matrix, particulas);
 
     // Pinta os pixels na janela
-    // render(timee, particulas);
+    render(timee, particulas);
 
 		frame++;
 		glDrawPixels(WIDTH, HEIGHT, GL_RGB, GL_UNSIGNED_BYTE, PixelBuffer);
