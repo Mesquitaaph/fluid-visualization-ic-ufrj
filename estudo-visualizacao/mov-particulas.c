@@ -6,10 +6,15 @@
 
 #define WIDTH 260
 #define HEIGHT WIDTH
-#define N_PARTICULAS 4096
+#define TAM_RASTRO 200
+
+#define MIN(a, b) (a < b ? a : b)
+#define MAX(a, b) (a > b ? a : b)
+// #define N_PARTICULAS 128*128
 
 typedef struct Particula {
   double x, y, vx, vy;
+  double *rastro_x, *rastro_y;
 } t_particula;
 
 void read_file(char * file_name, t_particula **velocidades){
@@ -105,7 +110,7 @@ void read_file_2(char * file_name, t_particula **velocidades){
   char* aux;
   char var;
 	int k, eqk, aux_ind, int_i, int_j;
-  double vel;
+  double vel, qt_vel = 0, med_vel = 0, max_vel = 0, min_vel = 2;
 	fp = fopen(file_name, "r"); // read mode
 
 	if (fp == NULL){
@@ -169,10 +174,23 @@ void read_file_2(char * file_name, t_particula **velocidades){
     //   if(var == 'y') velocidades[int_i-1][int_j-1].vy = vel;
     // }
 
+    if(var == 'y') {
+      double mag_vel = sqrt(velocidades[int_i+1][int_j+1].vx*velocidades[int_i+1][int_j+1].vx + velocidades[int_i+1][int_j+1].vy*velocidades[int_i+1][int_j+1].vy);
+
+      if(mag_vel > max_vel && mag_vel < 2.0) max_vel = mag_vel;
+      if(mag_vel < min_vel && mag_vel > 0.000001) min_vel = mag_vel;
+
+      qt_vel++;
+      med_vel += mag_vel;
+    }
+
 		fscanf(fp, "%s", ch);
 	}
 
 	fclose(fp);
+
+  med_vel = med_vel/qt_vel;
+  printf("max_vel = %lf, min_vel = %lf, med_vel = %lf\n", max_vel, min_vel, med_vel);
 }
 
 /*
@@ -212,7 +230,9 @@ t_plot WindowMatrixPlot = {1, -0, 0, WIDTH, HEIGHT};
 // Recebe um valor pertencente a um intervalo [min,max] e retorna o valor transformado
 // para o intervalo [floor,ceil]
 double map(double value, double min, double max, double floor, double ceil) {
-    return floor + (ceil - floor) * ((value - min) / (max - min));
+  if(value < min) return floor;
+  if(value > max) return ceil;
+  return floor + (ceil - floor) * ((value - min) / (max - min));
 }
 
 // Atribui ao pixel na posição (x,y) a cor [r,g,b]
@@ -225,24 +245,173 @@ void makePixel(int x, int y, int r, int g, int b, GLubyte* pixels, int width, in
   }
 }
 
-void render(t_particula** velocidades, t_particula *particulas) {
+// Atribui ao pixel na posição (x,y) a cor [r,g,b]
+void fadeOutPixel(int x, int y, int magnitude, GLubyte* pixels, int width, int height) {
+  int min = 10;
+  if (0 <= x && x < width && 0 <= y && y < height) {
+    int position = (x + y * width) * 3;
+    pixels[position] = pixels[position] == 0 ? 0 : MAX(pixels[position] - magnitude, min);
+    pixels[position + 1] = pixels[position + 1] == 0 ? 0 : MAX(pixels[position + 1] - magnitude, min);
+    pixels[position + 2] = pixels[position + 2] == 0 ? 0 : MAX(pixels[position + 2] - magnitude, min);
+
+    // printf("(%d, %d, %d)\n", pixels[position], pixels[position + 1], pixels[position + 2]);
+  }
+}
+
+void render_pixel(int tam_p, double x, double y, double r, double g, double b) {
+  for(int i = -tam_p; i <= tam_p; i++) {
+    for(int j = -tam_p; j <= tam_p; j++) {
+      makePixel(
+        x+i, y+j, 
+        r, g, b,
+        PixelBuffer, WIDTH, HEIGHT
+      );
+    }
+  }
+}
+
+void render(t_particula** velocidades, t_particula *particulas, long int N_PARTICULAS) {
   int tam_p = 0;
 
-  for(int z = 0; z < N_PARTICULAS; z++) {
+  for(long int z = 0; z < N_PARTICULAS; z++) {
     t_particula p = particulas[z];
+    // int x = p.x;
+    // int y = HEIGHT - p.y;
+
+    // double vel = sqrt(p.vx*p.vx + p.vy*p.vy);
+    // double bright_r = 255; //map(vel, 0.139557, 2, 0, 255);
+    // double bright_g = 255; //map(vel, 0.0, 0.139557, 0, 255);
+    // double bright_b = 255;
+
+    for(int r = 0; r < TAM_RASTRO; r++) {
+      int x = p.rastro_x[r];
+      int y = HEIGHT - p.rastro_y[r];
+
+      // printf("(%d, %d) ", x, y);
+      // if(r == TAM_RASTRO - 1) {
+      //   render_pixel(tam_p, x, y, 0, 0, 0);
+      //   continue;
+      // }
+
+      double bright = map(r, 0, TAM_RASTRO-1, 255, 0);
+
+      // printf("%lf ", bright);
+      double bright_r = bright;
+      double bright_g = bright;
+      double bright_b = bright;
+
+      render_pixel(tam_p, x, y, bright_r, bright_g, bright_b);
+    }
+    // printf("\n");
+  }
+}
+
+void atualiza_particulas(double dt, int n_dim, t_particula** A, t_particula* particulas, long int N_PARTICULAS) {
+  int tam_p = 0;
+  for(long int i = 0; i < N_PARTICULAS; i++) {
+    t_particula p = particulas[i];
+
     int x = p.x;
     int y = HEIGHT - p.y;
 
-    for(int i = -tam_p; i <= tam_p; i++) {
-      for(int j = -tam_p; j <= tam_p; j++) {
-        makePixel(
-          x+i, y+j, 
-          255, 255, 255,
-          PixelBuffer, WIDTH, HEIGHT
-        );
+    t_particula pvel = A[WIDTH - (int)p.y][(int)p.x];
+
+    particulas[i].vx = pvel.vx;
+    particulas[i].vy = pvel.vy;
+
+    particulas[i].x += pvel.vx * dt;
+
+    if(particulas[i].x < 1) particulas[i].x = 1;
+    if(particulas[i].x > n_dim-1) particulas[i].x = n_dim-1;
+
+    particulas[i].y += pvel.vy * dt;
+    if(particulas[i].y < 1) particulas[i].y = 1;
+    if(particulas[i].y > n_dim-1) particulas[i].y = n_dim-1;
+    
+    int novo_x = particulas[i].x;
+    int novo_y = HEIGHT - particulas[i].y;
+    if(x != novo_x || y != novo_y) {
+      // printf("(%d, %d) -> (%d, %d)\n",x, y, novo_x, novo_y);
+      // Atualiza a posição de cada pixel do rastro
+      for(int r = TAM_RASTRO - 1; r > 0; r--) {
+        // Teoricamente, apaga o ultimo pixel do rastro
+        // if(r == TAM_RASTRO - 1) render_pixel(tam_p, p.rastro_x[r], p.rastro_y[r], 0, 0, 0);
+        p.rastro_x[r] = p.rastro_x[r-1];
+        p.rastro_y[r] = p.rastro_y[r-1];
       }
+
+      p.rastro_x[0] = novo_x;
+      p.rastro_y[0] = novo_y;
+
+      render(A, particulas, N_PARTICULAS);
     }
   }
+}
+
+void render_2(t_particula** velocidades, t_particula *particulas, long int N_PARTICULAS) {
+  int tam_p = 0, fadeOutMagnitude = 0.9;
+
+  for(int x = 0; x < WIDTH; x++) {
+    for(int y = 0; y < HEIGHT; y++) {
+      fadeOutPixel(
+        x, y, 
+        fadeOutMagnitude,
+        PixelBuffer, WIDTH, HEIGHT
+      );
+    }
+  }
+
+  for(long int z = 0; z < N_PARTICULAS; z++) {
+    t_particula p = particulas[z];
+    int x = p.x;
+    int y = HEIGHT - p.y;
+    double color_up_lim = 256;
+    int color_trans_mag = 64; // color_transition_magnitude
+    double color_down_lim = 256 - (256-color_up_lim) - color_trans_mag;
+
+    double full_color = 256*3 - 1;
+    double vel_xy = sqrt(p.vx * p.vx + p.vy*p.vy);
+
+    double bright = map(vel_xy, 0.000006, 0.5, 0, full_color);
+
+
+    double bright_b = bright >= 0 && bright < color_up_lim ? bright : 10;
+    double bright_g = bright >= color_down_lim && bright < color_up_lim*2 ? bright : 10;
+    double bright_r = bright >= color_down_lim*2 && bright < color_up_lim*3 ? bright : 10;
+    render_pixel(tam_p, x, y, bright_r, bright_g, bright_b);
+  }
+}
+
+void atualiza_particulas_2(double dt, int n_dim, t_particula** A, t_particula* particulas, long int N_PARTICULAS) {
+  int tam_p = 0;
+  for(long int i = 0; i < N_PARTICULAS; i++) {
+    t_particula p = particulas[i];
+
+    int x = p.x;
+    int y = HEIGHT - p.y;
+
+    t_particula pvel = A[WIDTH - (int)p.y][(int)p.x];
+
+    particulas[i].vx = pvel.vx;
+    particulas[i].vy = pvel.vy;
+
+    particulas[i].x += pvel.vx * dt;
+
+    if(particulas[i].x < 1) particulas[i].x = 1;
+    if(particulas[i].x > n_dim-1) particulas[i].x = n_dim-1;
+
+    particulas[i].y += pvel.vy * dt;
+    if(particulas[i].y < 1) particulas[i].y = 1;
+    if(particulas[i].y > n_dim-1) particulas[i].y = n_dim-1;
+    
+    int novo_x = particulas[i].x;
+    int novo_y = HEIGHT - particulas[i].y;
+
+    p.rastro_x[0] = novo_x;
+    p.rastro_y[0] = novo_y;
+  }
+
+  render_2(A, particulas, N_PARTICULAS);
 }
 
 void preencheMatrizVelA(int n, t_particula** A) {
@@ -272,57 +441,46 @@ void preencheMatrizVelA(int n, t_particula** A) {
   }
 }
 
-void atualiza_particulas(double dt, int n_dim, t_particula** A, t_particula* particulas) {
-  int tam_p = 0;
-  for(int i = 0; i < N_PARTICULAS; i++) {
-    t_particula p = particulas[i];
-
-    int x = p.x;
-    int y = HEIGHT - p.y;
-
-    // Limpa o espaco em que a particula estava
-    for(int i = -tam_p; i <= tam_p; i++) {
-      for(int j = -tam_p; j <= tam_p; j++) {
-        makePixel(
-          x+i, y+j, 
-          0, 0, 0,
-          PixelBuffer, WIDTH, HEIGHT
-        );
-      }
-    }
-
-    t_particula pvel = A[WIDTH - (int)p.y][(int)p.x];
-
-    particulas[i].vx = pvel.vx;
-    particulas[i].vy = pvel.vy;
-
-    double aux = particulas[i].x;
-    particulas[i].x += pvel.vx * dt;
-
-    if(particulas[i].x < 1) particulas[i].x = 1;
-    if(particulas[i].x > n_dim-1) particulas[i].x = n_dim-1;
-
-    particulas[i].y += pvel.vy * dt;
-    if(particulas[i].y < 1) particulas[i].y = 1;
-    if(particulas[i].y > n_dim-1) particulas[i].y = n_dim-1;
-  }
-}
-
 int main(int argc, char** argv) {
   int n_dim = WIDTH, nt = 20000;
+  long int N_PARTICULAS = 256;
   double dt = 1.5;//0.0019073486;
   t_particula **A = create_matrix(n_dim, n_dim);
 
-  t_particula particulas[N_PARTICULAS];
-  for(int i = 0; i < N_PARTICULAS; i++) {
-    int sq = (int)sqrt(N_PARTICULAS);
+  t_particula* particulas;
+  particulas = (t_particula*) malloc(N_PARTICULAS * sizeof(t_particula));
 
-    // particulas[i].x = WIDTH*0.9;
-    // particulas[i].y = HEIGHT*0.1;
-    particulas[i].x = 2 + (i % sq) * (WIDTH-2)/sq;
-    particulas[i].y = 2 + (i / sq) * (HEIGHT-2)/sq;
+  for(long int i = 0; i < N_PARTICULAS; i++) {
+    int sq = (int)sqrt(N_PARTICULAS);
+    int posx, posy;
+
+    // posx = WIDTH*0.9;
+    // posy = HEIGHT*0.1;
+    
+    posx = 8 + (i % sq) * (WIDTH-8)/sq;
+    posy = 8 + (i / sq) * (HEIGHT-8)/sq;
+
+    // posx = (i / sq) + 2;
+    // posy = (i % sq) + 2;
+
+    particulas[i].x = posx;
+    particulas[i].y = posy;
+
     particulas[i].vx = 0;
     particulas[i].vy = 0;
+
+    // printf("posx = %d, posy = %d\n", posx, posy);
+
+    particulas[i].rastro_x = (double*)malloc(sizeof(double)*TAM_RASTRO);
+    particulas[i].rastro_y = (double*)malloc(sizeof(double)*TAM_RASTRO);
+
+    particulas[i].rastro_x[0] = posx;
+    particulas[i].rastro_y[0] = posy;
+
+    for(int r = 1; r < TAM_RASTRO; r++) {
+      particulas[i].rastro_x[r] = 0.0;
+      particulas[i].rastro_y[r] = HEIGHT - 0.0;
+    }
   }
 
   GLFWwindow* window;
@@ -347,15 +505,16 @@ int main(int argc, char** argv) {
   // scanf("%c", &initSim);
   int frame = 1;
   while (!glfwWindowShouldClose(window)){
+
     // Configuração da visualização
     glfwGetFramebufferSize(window, &WindowMatrixPlot.width, &WindowMatrixPlot.height);
     glViewport(0, 0, WindowMatrixPlot.width, WindowMatrixPlot.height);
     // printf("x = %lf, y = %lf\n", particulas[0].x, particulas[0].y);
     // Atualiza a posicao de cada uma das particulas
-    atualiza_particulas(dt, n_dim, A, particulas);
+    atualiza_particulas_2(dt, n_dim, A, particulas, N_PARTICULAS);
 
     // // Pinta os pixels na janela
-    render(A, particulas);
+    // render(A, particulas, N_PARTICULAS);
 
 
     // preencheMatrizVelA(n_dim, A);
