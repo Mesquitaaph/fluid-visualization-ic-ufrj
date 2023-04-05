@@ -2,7 +2,8 @@
 #include <stdlib.h>
 #include <string.h>
 #include <math.h>
-#include <sys/time.h>
+// #include <sys/time.h>
+#include <sys/timeb.h>
 #include <GLFW/glfw3.h>
 
 #define N 1000
@@ -29,7 +30,7 @@ typedef struct window_plot {
     int width, height;
 } t_plot;
 
-GLubyte PixelBuffer[WIDTH * HEIGHT * 3];
+// GLubyte PixelBuffer[WIDTH * HEIGHT * 3];
 
 // Atribuindo configurações do programa
 t_plot WindowMatrixPlot = {1, -0, 0, WIDTH, HEIGHT};
@@ -82,7 +83,9 @@ int wW,wE,wN,wS; /*specify the type of boundary condition along the
 					1 for free-slip conditions,
 					2 for no-slip conditions,*/
 char problem[N];
-struct timeval start, end;
+
+// struct timeval start, end;
+struct timeb start, end;
 int state = 0;
 int n_iter = 5;
 
@@ -92,59 +95,59 @@ double map(double value, double min, double max, double floor, double ceil) {
     return floor + (ceil - floor) * ((value - min) / (max - min));
 }
 
-void render(double time, t_particula *particulas) {
-  int tam_p = 0;
-	double bright = map(time, 0, final_time, 16, 255);
+// void render(double time, t_particula *particulas) {
+//   int tam_p = 0;
+// 	double bright = map(time, 0, final_time, 16, 255);
 
-  for(int z = 0; z < N_PARTICULAS; z++) {
-    t_particula p = particulas[z];
-    int x = p.x;
-    int y = HEIGHT - p.y;
+//   for(int z = 0; z < N_PARTICULAS; z++) {
+//     t_particula p = particulas[z];
+//     int x = p.x;
+//     int y = HEIGHT - p.y;
 
-    for(int i = -tam_p; i <= tam_p; i++) {
-      for(int j = -tam_p; j <= tam_p; j++) {
-        makePixel(
-          x+i, y+j, 
-          bright, bright, bright,
-          PixelBuffer, WIDTH, HEIGHT
-        );
-      }
-    }
-  }
-}
+//     for(int i = -tam_p; i <= tam_p; i++) {
+//       for(int j = -tam_p; j <= tam_p; j++) {
+//         makePixel(
+//           x+i, y+j, 
+//           bright, bright, bright,
+//           PixelBuffer, WIDTH, HEIGHT
+//         );
+//       }
+//     }
+//   }
+// }
 
-void atualiza_particulas(double dt, int n_dim, t_particula* particulas, double* d_vx, double* d_vy) {
-  for(int i = 0; i < N_PARTICULAS; i++) {
-    t_particula p = particulas[i];
+// void atualiza_particulas(double dt, int n_dim, t_particula* particulas, double* d_vx, double* d_vy) {
+//   for(int i = 0; i < N_PARTICULAS; i++) {
+//     t_particula p = particulas[i];
 
-    int x = p.x;
-    int y = HEIGHT - p.y;
+//     int x = p.x;
+//     int y = HEIGHT - p.y;
 
-    // Limpa o espaco em que a particula estava
-    for(int k = -1; k <= 1; k++) {
-      for(int j = -1; j <= 1; j++) {
-        makePixel(
-          x+k, y+j, 
-          0, 0, 0,
-          PixelBuffer, WIDTH, HEIGHT
-        );
-      }
-    }
+//     // Limpa o espaco em que a particula estava
+//     for(int k = -1; k <= 1; k++) {
+//       for(int j = -1; j <= 1; j++) {
+//         makePixel(
+//           x+k, y+j, 
+//           0, 0, 0,
+//           PixelBuffer, WIDTH, HEIGHT
+//         );
+//       }
+//     }
 
-    //POINT pvel = velocidades[WIDTH-(int)p.y][(int)p.x];
-		int idx = (WIDTH-4)*((int)p.y) + (int)p.x;
-    particulas[i].vx = d_vx[idx];
-    particulas[i].vy = d_vy[idx];
+//     //POINT pvel = velocidades[WIDTH-(int)p.y][(int)p.x];
+// 		int idx = (WIDTH-4)*((int)p.y) + (int)p.x;
+//     particulas[i].vx = d_vx[idx];
+//     particulas[i].vy = d_vy[idx];
 
-    particulas[i].x += d_vx[idx] * dt;
-    if(particulas[i].x < 1) particulas[i].x = 1;
-    if(particulas[i].x > n_dim-1) particulas[i].x = n_dim-1;
+//     particulas[i].x += d_vx[idx] * dt;
+//     if(particulas[i].x < 1) particulas[i].x = 1;
+//     if(particulas[i].x > n_dim-1) particulas[i].x = n_dim-1;
 
-    particulas[i].y += d_vy[idx] * dt;
-    if(particulas[i].y < 1) particulas[i].y = 1;
-    if(particulas[i].y > n_dim-1) particulas[i].y = n_dim-1;
-  }
-}
+//     particulas[i].y += d_vy[idx] * dt;
+//     if(particulas[i].y < 1) particulas[i].y = 1;
+//     if(particulas[i].y > n_dim-1) particulas[i].y = n_dim-1;
+//   }
+// }
 
 double absf(double a){
 	return a < 0 ? -1*a : a;
@@ -337,7 +340,7 @@ void write_file(char* output){
 	  exit(EXIT_FAILURE);
 	}
 	
-	fprintf(fp,"Time taken: %ld seconds\n", end.tv_sec-start.tv_sec);
+	// fprintf(fp,"Time taken: %ld seconds\n", stop-start);
 	fprintf(fp,"Simulation Time: %.5f seconds\n", ttime);
 
 	for(i = 0; i < imax+2; i++){
@@ -345,9 +348,9 @@ void write_file(char* output){
 			idx = i*(imax+2)+j;
 			fprintf(fp,"vx[%d][%d]=%.10f\n",i,j,vx[idx]);
 			fprintf(fp,"vy[%d][%d]=%.10f\n",i,j,vy[idx]);
-			fprintf(fp,"F[%d][%d]=%.10f\n",i,j,F[idx]);
-			fprintf(fp,"G[%d][%d]=%.10f\n",i,j,G[idx]);
-			fprintf(fp,"p[%d][%d]=%.10f\n",i,j,p[idx]);
+			// fprintf(fp,"F[%d][%d]=%.10f\n",i,j,F[idx]);
+			// fprintf(fp,"G[%d][%d]=%.10f\n",i,j,G[idx]);
+			// fprintf(fp,"p[%d][%d]=%.10f\n",i,j,p[idx]);
 		}
 		//fprintf(fp,"\n");
 	}
@@ -1136,6 +1139,9 @@ int adap_Vel(int n_blocos, int n_threads){
 
 
 int main(int argc, char ** argv){
+	// cudaEventCreate(&start);
+	// cudaEventCreate(&stop);
+
 	read_file(argv[1]);
 	alocate_vectors_host();
 	alocate_vectors_device();
@@ -1153,7 +1159,8 @@ int main(int argc, char ** argv){
 	int limit = 100;
 	int frames = 2000;
 
-  gettimeofday(&start, NULL);
+  // gettimeofday(&start, NULL);
+	ftime(&start);
 
 	t_particula particulas[N_PARTICULAS];
   for(int i = 0; i < N_PARTICULAS; i++) {
@@ -1165,6 +1172,7 @@ int main(int argc, char ** argv){
     particulas[i].vy = 0;
   }
 
+/*
   GLFWwindow* window;
   // Inicializando a biblioteca
   if (!glfwInit())
@@ -1180,8 +1188,11 @@ int main(int argc, char ** argv){
   // Cria o contexto atual da janela
   glfwMakeContextCurrent(window);
 
-	int frame = 1;
+*/
+	int frame = 0;
+	float last_time_frame = 0.0;
 	while(!state){
+	/*
 		// Configuração da visualização
     glfwGetFramebufferSize(window, &WindowMatrixPlot.width, &WindowMatrixPlot.height);
     glViewport(0, 0, WindowMatrixPlot.width, WindowMatrixPlot.height);
@@ -1199,6 +1210,7 @@ int main(int argc, char ** argv){
     // Funções necesárias para o funcionamento da biblioteca que desenha os pixels
     glfwSwapBuffers(window);
     glfwPollEvents();
+	*/
 
 		if(set_time){
 			comp_delt();
@@ -1219,16 +1231,29 @@ int main(int argc, char ** argv){
 		comp_RHS<<<n_blocos, n_threads>>>(imax, jmax, delx, dely, del_time, d_rhs, d_F, d_G);		
 		Poisson();
 
-		printf("Time = %lf/%lf\r", ttime, final_time);
+		// printf("Time = %lf/%lf\r", ttime, final_time);
 		state = adap_Vel(n_blocos, n_threads);
 		
 		ttime += del_time;
-		ant_del_time = del_time;		
+		ant_del_time = del_time;
+
+		frame++;
+		ftime(&end);
+		int time_frame = (int) (1000.0 * (end.time - start.time)
+        + (end.millitm - start.millitm));
+
+		// printf("Time = %d\n", time_frame);
+		if(time_frame - last_time_frame >= 1000.0) {
+			printf("%d fps\n", frame);
+			frame = 0;
+			last_time_frame = time_frame;
+		}
 	}
 
 	set_bondCond();		
 	set_lidDrivenCavityProblem<<<n_blocos, n_threads>>>(1.0, imax, jmax, d_vx);
-	gettimeofday(&end, NULL);
+	// gettimeofday(&end, NULL);
+	ftime(&end);
 
 	copy_vectors_device_to_host(); 
   write_file(argv[2]);
@@ -1236,6 +1261,12 @@ int main(int argc, char ** argv){
   free_vectors_device();	
 	free_vectors_host();
 
+	int milliseconds = (int) (1000.0 * (end.time - start.time) + (end.millitm - start.millitm));
+	
+	printf("Time = %lf/%lf\n", ttime, final_time);
+	printf("Time elapsed: %lf seconds\n", milliseconds/1000.0);
+
+	/*
 	frame = 0;
 	while(frame < frames){
 		// Configuração da visualização
@@ -1255,6 +1286,6 @@ int main(int argc, char ** argv){
     glfwSwapBuffers(window);
     glfwPollEvents();
 	}
-	
+	*/
 	return 0;
 }
