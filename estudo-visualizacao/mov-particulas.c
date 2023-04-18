@@ -4,8 +4,15 @@
 #include <math.h>
 #include <GLFW/glfw3.h>
 
-#define WIDTH 260
+#define OFFSET_X 1
+#define OFFSET_Y 1
+
+#define WIDTH (512+2*OFFSET_X+2*OFFSET_Y)
 #define HEIGHT WIDTH
+
+#define MIRROR_WIDTH WIDTH
+#define MIRROR_HEIGHT 0
+
 #define TAM_RASTRO 200
 
 #define MIN(a, b) (a < b ? a : b)
@@ -166,8 +173,8 @@ void read_file_2(char * file_name, t_particula **velocidades){
     
     // if(var == 'x') velocidades[514-int_j][int_i+1].vx = vel; // 1 -> 514
     // if(var == 'y') velocidades[514-int_j][int_i+1].vy = vel;
-    if(var == 'x') velocidades[int_i+1][int_j+1].vx = vel;
-    if(var == 'y') velocidades[int_i+1][int_j+1].vy = vel;
+    if(var == 'x') velocidades[int_i+OFFSET_X][int_j+OFFSET_Y].vx = vel;
+    if(var == 'y') velocidades[int_i+OFFSET_X][int_j+OFFSET_Y].vy = vel;
     
     // if(int_i > 0 && int_i < WIDTH+1 && int_j > 0 && int_j < HEIGHT+1) {
     //   if(var == 'x') velocidades[int_i-1][int_j-1].vx = vel;
@@ -193,6 +200,10 @@ void read_file_2(char * file_name, t_particula **velocidades){
   printf("max_vel = %lf, min_vel = %lf, med_vel = %lf\n", max_vel, min_vel, med_vel);
 }
 
+double mirror_value(double value, double mirror) {
+  if(mirror == 0.0) return value;
+  return mirror - value;
+}
 /*
   Funcao que recebe uma matriz M, um inteiro N e
   desaloca os ponteiros apontados por M, assim como desaloca M.
@@ -285,7 +296,7 @@ void render(t_particula** velocidades, t_particula *particulas, long int N_PARTI
 
     for(int r = 0; r < TAM_RASTRO; r++) {
       int x = p.rastro_x[r];
-      int y = HEIGHT - p.rastro_y[r];
+      int y = mirror_value(p.rastro_y[r], MIRROR_HEIGHT);
 
       // printf("(%d, %d) ", x, y);
       // if(r == TAM_RASTRO - 1) {
@@ -308,13 +319,14 @@ void render(t_particula** velocidades, t_particula *particulas, long int N_PARTI
 
 void atualiza_particulas(double dt, int n_dim, t_particula** A, t_particula* particulas, long int N_PARTICULAS) {
   int tam_p = 0;
+
   for(long int i = 0; i < N_PARTICULAS; i++) {
     t_particula p = particulas[i];
 
     int x = p.x;
-    int y = HEIGHT - p.y;
+    int y = mirror_value(p.y, MIRROR_HEIGHT);
 
-    t_particula pvel = A[WIDTH - (int)p.y][(int)p.x];
+    t_particula pvel = A[(int)mirror_value(p.y, MIRROR_WIDTH)][(int)p.x];
 
     particulas[i].vx = pvel.vx;
     particulas[i].vy = pvel.vy;
@@ -329,7 +341,7 @@ void atualiza_particulas(double dt, int n_dim, t_particula** A, t_particula* par
     if(particulas[i].y > n_dim-1) particulas[i].y = n_dim-1;
     
     int novo_x = particulas[i].x;
-    int novo_y = HEIGHT - particulas[i].y;
+    int novo_y = mirror_value(particulas[i].y, MIRROR_HEIGHT);
     if(x != novo_x || y != novo_y) {
       // printf("(%d, %d) -> (%d, %d)\n",x, y, novo_x, novo_y);
       // Atualiza a posição de cada pixel do rastro
@@ -364,7 +376,7 @@ void render_2(t_particula** velocidades, t_particula *particulas, long int N_PAR
   for(long int z = 0; z < N_PARTICULAS; z++) {
     t_particula p = particulas[z];
     int x = p.x;
-    int y = HEIGHT - p.y;
+    int y = mirror_value(p.y, MIRROR_HEIGHT);
     double color_up_lim = 256;
     int color_trans_mag = 64; // color_transition_magnitude
     double color_down_lim = 256 - (256-color_up_lim) - color_trans_mag;
@@ -388,9 +400,9 @@ void atualiza_particulas_2(double dt, int n_dim, t_particula** A, t_particula* p
     t_particula p = particulas[i];
 
     int x = p.x;
-    int y = HEIGHT - p.y;
+    int y = mirror_value(p.y, MIRROR_HEIGHT);
 
-    t_particula pvel = A[WIDTH - (int)p.y][(int)p.x];
+    t_particula pvel = A[(int)mirror_value(p.y, MIRROR_WIDTH)][(int)p.x];
 
     particulas[i].vx = pvel.vx;
     particulas[i].vy = pvel.vy;
@@ -405,7 +417,7 @@ void atualiza_particulas_2(double dt, int n_dim, t_particula** A, t_particula* p
     if(particulas[i].y > n_dim-1) particulas[i].y = n_dim-1;
     
     int novo_x = particulas[i].x;
-    int novo_y = HEIGHT - particulas[i].y;
+    int novo_y = mirror_value(particulas[i].y, MIRROR_HEIGHT);
 
     p.rastro_x[0] = novo_x;
     p.rastro_y[0] = novo_y;
@@ -444,7 +456,7 @@ void preencheMatrizVelA(int n, t_particula** A) {
 int main(int argc, char** argv) {
   int n_dim = WIDTH, nt = 20000;
   long int N_PARTICULAS = 256;
-  double dt = 1.5;//0.0019073486;
+  double dt = 2.5;//0.0019073486;
   t_particula **A = create_matrix(n_dim, n_dim);
 
   t_particula* particulas;
@@ -454,7 +466,7 @@ int main(int argc, char** argv) {
     int sq = (int)sqrt(N_PARTICULAS);
     int posx, posy;
 
-    // posx = WIDTH*0.9;
+    // posx = WIDTH*0.7;
     // posy = HEIGHT*0.1;
     
     posx = 8 + (i % sq) * (WIDTH-8)/sq;

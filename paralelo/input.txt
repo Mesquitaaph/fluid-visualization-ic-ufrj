@@ -1,7 +1,7 @@
 1:xlen
 1:ylen
-256:imax
-256:jmax
+512:imax
+512:jmax
 0:delx
 0:dely
 30.0:final_time

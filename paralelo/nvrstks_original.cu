@@ -19,8 +19,6 @@
 
 #define NUMBLOCKS 32
 
-#define TAM_BUFFER_SOR 1024
-
 typedef struct Particula {
   double x, y, vx, vy;
 } t_particula;
@@ -91,7 +89,6 @@ char problem[N];
 struct timeb start, end, aux_start;
 int state = 0;
 int n_iter = 5;
-__device__ int d_n_iter = 5;
 
 // Recebe um valor pertencente a um intervalo [min,max] e retorna o valor transformado
 // para o intervalo [floor,ceil]
@@ -299,13 +296,10 @@ double *p;
 double *rhs;
 double *F;
 double *G;
-double *diff;
 
 double *d_vx = NULL;
 double *d_vy = NULL;
 double *d_p = NULL;
-double *d_p_red = NULL;
-double *d_p_black = NULL;
 double *d_p_prev = NULL;
 double *d_partial = NULL;
 double *d_p_diff = NULL;
@@ -331,8 +325,7 @@ double *d_vyflag = NULL;
 int *d_res = NULL;
 
 double *dp=NULL;
-double* d_diff = NULL;
-
+	
 
 int n_threads,n_blocos ;
 
@@ -374,9 +367,8 @@ void alocate_vectors_host(){
 	rhs = (double*)malloc((imax+2)*(jmax+2) * sizeof(double));
 	F = (double*)malloc((imax+2)*(jmax+2) * sizeof(double));
 	G = (double*)malloc((imax+2)*(jmax+2) * sizeof(double));
-	diff = (double*)malloc(sizeof(double));
 	
-	if(vx == NULL || vy == NULL || p == NULL || rhs == NULL || F == NULL || G == NULL || diff == NULL){
+	if(vx == NULL || vy == NULL || p == NULL || rhs == NULL || F == NULL || G == NULL){
 		printf("It wasn't possible to alocate memory\n");
 		exit(0);
 	}
@@ -384,7 +376,6 @@ void alocate_vectors_host(){
 
 void alocate_vectors_device(){	
 	size_t size = (imax+2)*(jmax+2) * sizeof(double);
-	size_t red_black_size = (imax+2)*(jmax+2)/2 * sizeof(double);
 	
 	err = cudaMalloc((void **)&d_vx, size);
 	if (err != cudaSuccess){
@@ -511,24 +502,6 @@ void alocate_vectors_device(){
 		fprintf(stderr, "Failed to allocate device pointer vydiff (error code %s)!\n", cudaGetErrorString(err));
 		exit(EXIT_FAILURE);
 	}
-
-	err = cudaMalloc((void **)&d_diff, sizeof(double));
-	if (err != cudaSuccess){
-		fprintf(stderr, "Failed to allocate device pointer d_diff (error code %s)!\n", cudaGetErrorString(err));
-		exit(EXIT_FAILURE);
-	}
-
-	err = cudaMalloc((void **)&d_p_red, red_black_size);
-	if (err != cudaSuccess){
-		fprintf(stderr, "Failed to allocate device pointer d_p_red (error code %s)!\n", cudaGetErrorString(err));
-		exit(EXIT_FAILURE);
-	}
-
-	err = cudaMalloc((void **)&d_p_black, red_black_size);
-	if (err != cudaSuccess){
-		fprintf(stderr, "Failed to allocate device pointer d_p_black (error code %s)!\n", cudaGetErrorString(err));
-		exit(EXIT_FAILURE);
-	}
 }
 
 void free_vectors_host(){
@@ -538,7 +511,6 @@ void free_vectors_host(){
 	free(rhs);
 	free(F);
 	free(G);	
-	free(diff);	
 }
 
 void free_vectors_device(){
@@ -607,24 +579,6 @@ void free_vectors_device(){
 	err = cudaFree(d_vydiff);
 	if (err != cudaSuccess){
 		fprintf(stderr, "Failed to free device pointer vydiff (error code %s)!\n", cudaGetErrorString(err));
-		exit(EXIT_FAILURE);
-	}	
-	
-	err = cudaFree(d_diff);
-	if (err != cudaSuccess){
-		fprintf(stderr, "Failed to free device pointer d_diff (error code %s)!\n", cudaGetErrorString(err));
-		exit(EXIT_FAILURE);
-	}	
-	
-	err = cudaFree(d_p_red);
-	if (err != cudaSuccess){
-		fprintf(stderr, "Failed to free device pointer d_p_red (error code %s)!\n", cudaGetErrorString(err));
-		exit(EXIT_FAILURE);
-	}	
-	
-	err = cudaFree(d_p_black);
-	if (err != cudaSuccess){
-		fprintf(stderr, "Failed to free device pointer d_p_black (error code %s)!\n", cudaGetErrorString(err));
 		exit(EXIT_FAILURE);
 	}	
 }
@@ -713,7 +667,7 @@ __device__ double d_absf(double x){
 	return x < 0 ? -1*x : x;
 }
 
-__global__ void init_UVP(int imax, int jmax, double vx_init, double vy_init, double p_init, double* d_vx, double* d_vy, double* d_p, double* d_rhs, double* d_F, double* d_G, double* d_p_red, double* d_p_black){
+__global__ void init_UVP(int imax, int jmax, double vx_init, double vy_init, double p_init, double* d_vx, double* d_vy, double* d_p, double* d_rhs, double* d_F, double* d_G){
 	int idx = blockIdx.x * blockDim.x + threadIdx.x;	
 	int n = (imax+2)*(jmax+2);
 	if(idx < n){
@@ -723,11 +677,6 @@ __global__ void init_UVP(int imax, int jmax, double vx_init, double vy_init, dou
 		d_rhs[idx] = 0;
 		d_F[idx] = 0;
 		d_G[idx] = 0;
-
-		if(idx < n/2) {
-			d_p_red[idx] = p_init;
-			d_p_black[idx] = p_init;
-		}
 	}
 }
 
@@ -1011,7 +960,7 @@ __global__ void comp_RHS(int imax, int jmax, double delx, double dely, double de
 	}	
 }
 
-__global__ void build_poisson_system(int jmax, int imax, double delx, double dely, double* d_diag_n, double* d_diag_s, double* d_diag_e, double* d_diag_w, double* d_diag_p, double* d_p_red, double* d_p_black){
+__global__ void build_poisson_system(int jmax, int imax, double delx, double dely, double* d_diag_n, double* d_diag_s, double* d_diag_e, double* d_diag_w, double* d_diag_p){
 	int i, j, idx;
 	int ew, ee, es, en;
 	for(j = jmax; j > 0; j--){
@@ -1025,7 +974,7 @@ __global__ void build_poisson_system(int jmax, int imax, double delx, double del
 			d_diag_w[idx] = ew/SQR(delx);
 			d_diag_p[idx] = ((ee+ew)/SQR(delx) + (en+es)/SQR(dely));
 			d_diag_n[idx] = en/SQR(dely);
-			d_diag_s[idx] = es/SQR(dely);
+			d_diag_s[idx] = es/SQR(dely);			
 		}
 	}
 }
@@ -1062,200 +1011,97 @@ __global__ void reductionMax(int imax, int jmax, double* d_partial, double* d_di
 	}
 }
 
-__global__ void red_SOR(int imax, int jmax, double omg, double* d_rhs, double* d_p_diff, double* d_diag_n, double* d_diag_s, double* d_diag_e, double* d_diag_w, double* d_diag_p, double* d_flag, double* d_p_red, double* d_p_black){	
-	int idx = blockIdx.x * blockDim.x + threadIdx.x; // idx = (imax+2)
-	int size = (imax+2)*(jmax+2);
-	int new_imax = (imax+2)/2;
-	int line = idx / new_imax; // line = 1
-	int paridade = line % 2; // paridade = 0
-	double aux;
-	
-	// __shared__ double buffer[TAM_BUFFER_SOR];
-	// if(idx == 0) printf("blockDim.x = %d\n", blockDim.x);
-	// idx = j*(imax+2)+i;
-	// idx+1 = j*(imax+2)+i+1;
-	// idx+1+(imax+2) = j*(imax+2)+(imax+2)+(i+1);
-	// idx+1+(imax+2) = (j+1)*(imax+2) +(i+1);
-
-	// buffer[idx] = d_p[idx];
-	// __syncthreads();
-
-	int nidx_red = 2*idx + (idx/new_imax)%2;
-	int nidx_black = 2*idx + ((idx/new_imax + 1))%2;
-
-	if(	idx < size/2 && nidx_red < size && nidx_red > (imax+1) && nidx_red < (imax+2)*(jmax+1) && nidx_red % (imax+2) > 0 && nidx_red % (imax+2) < (imax+1)){
-			// if(nidx_red == imax+3 || nidx_red == (imax+2)*2 + 2) {
-			// 	int id_dir = idx+paridade, id_esq = idx-1+paridade;
-			// 	id_dir = 2*id_dir + (id_dir/new_imax+1)%2, id_esq = 2*id_esq + (id_esq/new_imax+1)%2;
-
-			// 	printf("idx = %d | right = %d | left = %d | paridade = %d\n", nidx_red, id_dir, id_esq, paridade);
-			// }
-			aux = d_diag_s[nidx_red]*d_p_black[idx + new_imax] + d_diag_n[nidx_red]*d_p_black[idx - new_imax]+ d_diag_e[nidx_red]*d_p_black[idx+paridade] + d_diag_w[nidx_red]*d_p_black[idx-1+paridade];
-			aux = (1-omg)*d_p_red[idx] + omg*(aux-d_rhs[nidx_red])/d_diag_p[nidx_red];
-			d_p_diff[nidx_red] = d_absf(aux-d_p_red[idx]);		
-			d_flag[nidx_red] = 1;
-			d_p_red[idx] = aux;
-			// d_p[nidx_red] = aux;
-	}
-
-	if(	nidx_black < size) d_flag[nidx_black] = 0;
-	// else{
-	// 	d_flag[idx] = 0;
-	// }
-
-
-	// if(	idx < size && idx > (imax+1) && idx < (imax+2)*(jmax+1) && 
-	// 		idx % 2 == paridade && idx % (imax+2) > 0 && idx % (imax+2) < (imax+1)){ // idx % 2 = 0
-	// 	// if(idx != (paridade ? nidx/2 : (nidx-1)/2)) {
-	// 	// 	printf("idx = %d, nidx = %d\n", idx, paridade ? nidx/2 : (nidx-1)/2);
-	// 	// }
-	// 	aux = d_diag_s[idx]*d_p[idx+(imax+2)] + d_diag_n[idx]*d_p[idx-(imax+2)]+ d_diag_e[idx]*d_p[idx+1] + d_diag_w[idx]*d_p[idx-1];
-	// 	aux = (1-omg)*d_p[idx] + omg*(aux-d_rhs[idx])/d_diag_p[idx];
-	// 	d_p_diff[idx] = d_absf(aux-d_p[idx]);		
-	// 	d_flag[idx] = 1;
-	// 	d_p[idx] = aux;
-	// }else{
-	// 	d_flag[idx] = 0;
-	// }
-	
-	// int nidx = 2*idx + (idx/((imax+2) / 2))%2;
-	// if(	nidx < size && nidx > (imax+1) && nidx < (imax+2)*(jmax+1) && 
-	// 		nidx % (imax+2) > 0 && nidx % (imax+2) < (imax+1)){
-	// 	// if(idx != (paridade ? nidx/2 : (nidx-1)/2)) {
-	// 	// 	printf("idx = %d, nidx = %d\n", idx, paridade ? nidx/2 : (nidx-1)/2);
-	// 	// }
-	// 	aux = d_diag_s[nidx]*d_p[nidx+(imax+2)] + d_diag_n[nidx]*d_p[nidx-(imax+2)]+ d_diag_e[nidx]*d_p[nidx+1] + d_diag_w[nidx]*d_p[nidx-1];
-	// 	aux = (1-omg)*d_p[nidx] + omg*(aux-d_rhs[nidx])/d_diag_p[nidx];
-	// 	d_p_diff[nidx] = d_absf(aux-d_p[nidx]);		
-	// 	d_flag[nidx] = 1;
-	// 	d_p[nidx] = aux;
-	// }
-
-}
-
-__global__ void black_SOR(int imax, int jmax, double omg, double* d_rhs, double* d_p_diff, double* d_diag_n, double* d_diag_s, double* d_diag_e, double* d_diag_w, double* d_diag_p, double* d_flag, double* d_p_red, double* d_p_black){
+__global__ void red_SOR(int imax, int jmax, double omg, double* d_p, double* d_rhs, double* d_p_diff, double* d_diag_n, double* d_diag_s, double* d_diag_e, double* d_diag_w, double* d_diag_p, double* d_p_prev, double* d_flag){	
 	int idx = blockIdx.x * blockDim.x + threadIdx.x;
 	int size = (imax+2)*(jmax+2);
-	int new_imax = (imax+2)/2;
-	int line = idx / new_imax;
+	int line = idx / (imax+2);
+	int paridade = line % 2;
+	double aux;
+	
+	if(	idx < size && idx > (imax+1) && idx < (imax+2)*(jmax+1) && 
+			idx % 2 == paridade && idx % (imax+2) > 0 && idx % (imax+2) < (imax+1)){
+		d_p_prev[idx] = d_p[idx];
+		aux = d_diag_s[idx]*d_p[idx+(imax+2)] + d_diag_n[idx]*d_p[idx-(imax+2)]+ d_diag_e[idx]*d_p[idx+1] + d_diag_w[idx]*d_p[idx-1];
+		aux = (1-omg)*d_p[idx] + omg*(aux-d_rhs[idx])/d_diag_p[idx];
+		d_p_diff[idx] = d_absf(aux-d_p[idx]);		
+		d_flag[idx] = 1;
+		d_p[idx] = aux;
+	}	else{
+		d_flag[idx] = 0;
+	}
+}
+
+__global__ void black_SOR(int imax, int jmax, double omg, double* d_p, double* d_rhs, double* d_p_diff, double* d_diag_n, double* d_diag_s, double* d_diag_e, double* d_diag_w, double* d_diag_p, double* d_p_prev, double* d_flag){
+	int idx = blockIdx.x * blockDim.x + threadIdx.x;
+	int size = (imax+2)*(jmax+2);
+	int line = idx / (imax+2);
 	int paridade =!(line % 2);
 	double aux;
-	
-	int nidx_black = 2*idx + ((idx/((imax+2) / 2) + 1))%2;
-	int nidx_red = 2*idx + (idx/((imax+2) / 2))%2;
-
-	if(	nidx_black < size && nidx_black > (imax+1) && nidx_black < (imax+2)*(jmax+1) && 
-			nidx_black % (imax+2) > 0 && nidx_black % (imax+2) < (imax+1)){
-
-		// if(nidx_black == imax+3 || nidx_black == (imax+2)*2 + 2) {
-		// 		int id_dir = idx+paridade, id_esq = idx-1+paridade;
-		// 		id_dir = 2*id_dir + (id_dir/new_imax+1)%2, id_esq = 2*id_esq + (id_esq/new_imax+1)%2;
-
-		// 		printf("idx = %d | right = %d | left = %d | paridade = %d\n", nidx_red, id_dir, id_esq, paridade);
-		// 	}
-		aux = d_diag_s[nidx_black]*d_p_red[idx+(imax+2)/2] + d_diag_n[nidx_black]*d_p_red[idx-(imax+2)/2]+ d_diag_e[nidx_black]*d_p_red[idx+paridade] + d_diag_w[nidx_black]*d_p_red[idx-1+paridade];
-		aux = (1-omg)*d_p_black[idx] + omg*(aux-d_rhs[nidx_black])/d_diag_p[nidx_black];
-		d_p_diff[nidx_black] = d_absf(aux-d_p_black[idx]);		
-		d_flag[nidx_black] = 1;
-		d_p_black[idx] = aux;
-		// d_p[nidx_black] = aux;
-	}
-	
-	if(	nidx_red < size) d_flag[nidx_red] = 0;
-
-	// if(	idx < size && idx > (imax+1) && idx < (imax+2)*(jmax+1) && idx % (imax+2) > 0 && idx % (imax+2) < (imax+1) && 
-	// 		idx % 2 == paridade){
-
-	// 	aux = d_diag_s[idx]*d_p[idx+(imax+2)] + d_diag_n[idx]*d_p[idx-(imax+2)]+d_diag_e[idx]*d_p[idx+1]+d_diag_w[idx]*d_p[idx-1];
-	// 	aux = (1-omg)*d_p[idx] + omg*(aux-d_rhs[idx])/d_diag_p[idx];
-	// 	d_p_diff[idx] = d_absf(aux-d_p[idx]);		
-	// 	d_flag[idx] = 1;
-	// 	d_p[idx] = aux;
-	// }	else{
-	// 	d_flag[idx] = 0;
-	// } 
-}
-
-__global__ void check_diff(double* d_partial, double* d_diff, double* diff) {
-	__shared__ double diff_local[1];
-	diff_local[0] = 0.0;
-	int idx = blockIdx.x * blockDim.x + threadIdx.x;
-	if(d_partial[idx] > diff_local[0]) diff_local[0] = d_partial[idx];
-
-	// printf("diff = %lf\n", diff[0]);
-	__syncthreads();
-	if(idx == 0) {
-		*d_diff = diff_local[0];
-		// printf("diff_device = %lf\n", diff_local[0]);
-	}
-}
-
-int calc_interval(void* start, void* end) {
-	struct timeb *start_time = (timeb*)start;
-	struct timeb *end_time = (timeb*)end;
-	ftime(end_time);
-
-	int total_time = (int) (1000.0 * (end_time->time - start_time->time)
-			+ (end_time->millitm - start_time->millitm));
-
-	return total_time;
+		
+	if(	idx < size && idx > (imax+1) && idx < (imax+2)*(jmax+1) && 
+			idx % 2 == paridade && idx % (imax+2) > 0 && idx % (imax+2) < (imax+1)){
+		d_p_prev[idx] = d_p[idx];
+		aux = d_diag_s[idx]*d_p[idx+(imax+2)] + d_diag_n[idx]*d_p[idx-(imax+2)]+d_diag_e[idx]*d_p[idx+1]+d_diag_w[idx]*d_p[idx-1];
+		aux = (1-omg)*d_p[idx] + omg*(aux-d_rhs[idx])/d_diag_p[idx];
+		d_p_diff[idx] = d_absf(aux-d_p[idx]);		
+		d_flag[idx] = 1;
+		d_p[idx] = aux;
+	}	else{
+		d_flag[idx] = 0;
+	}	
 }
 
 int Poisson(){
 	int iter = 0;
 	int i;
+	double diff = 0;
 	double partial[NUMBLOCKS];
 	struct timeb start_rbsor, end_rbsor, start_redct, end_redct, start_aux, end_aux, start_total, end_total;
 	int total_rbsor = 0, total_redct = 0, total_aux = 0, total = 0;
 
-	int n_blocos_sor = ((imax+2)*(jmax+2) + TAM_BUFFER_SOR-1)/TAM_BUFFER_SOR;
-	// printf("%d == %d\n", n_blocos_sor * TAM_BUFFER_SOR, (imax)*(jmax));
-	// err = cudaMemcpy(d_diff, diff, sizeof(double), cudaMemcpyHostToDevice);
-	// if (err != cudaSuccess){
-	// 	fprintf(stderr, "Failed to copy pointer diff from device to host (error code %s)!\n", cudaGetErrorString(err));
-	// 	exit(EXIT_FAILURE);
-	// }
-	
 	ftime(&start_total);
 	while(iter < max_iter){
 		ftime(&start_rbsor);
 		for(i = 0; i < n_iter; i++){
-			red_SOR<<<n_blocos/2, n_threads>>>(imax, jmax, omg, d_rhs, d_p_diff, d_diag_n, d_diag_s, d_diag_e, d_diag_w, d_diag_p, d_flag, d_p_red, d_p_black);
-			// red_SOR<<<n_blocos_sor, TAM_BUFFER_SOR>>>(imax, jmax, omg, d_p, d_rhs, d_p_diff, d_diag_n, d_diag_s, d_diag_e, d_diag_w, d_diag_p, d_flag);
-			black_SOR<<<n_blocos/2, n_threads>>>(imax, jmax, omg, d_rhs, d_p_diff, d_diag_n, d_diag_s, d_diag_e, d_diag_w, d_diag_p, d_flag, d_p_red, d_p_black);
+			red_SOR<<<n_blocos, n_threads>>>(imax, jmax, omg, d_p, d_rhs, d_p_diff, d_diag_n, d_diag_s, d_diag_e, d_diag_w, d_diag_p, d_p_prev, d_flag);
+			black_SOR<<<n_blocos, n_threads>>>(imax, jmax, omg, d_p, d_rhs, d_p_diff, d_diag_n, d_diag_s, d_diag_e, d_diag_w, d_diag_p, d_p_prev, d_flag);
 		}
+		ftime(&end_rbsor);
+		total_rbsor += (int) (1000.0 * (end_rbsor.time - start_rbsor.time)
+        + (end_rbsor.millitm - start_rbsor.millitm));
+		
+		diff = 0;
 
 		ftime(&start_redct);
 		reductionMax<<<REDCT_NUMTHREADS, NUMBLOCKS>>>(imax, jmax, d_partial, d_p_diff, d_flag);
-		total_rbsor += calc_interval(&start_rbsor, &end_rbsor);
+		ftime(&end_redct);
+		total_redct += (int) (1000.0 * (end_redct.time - start_redct.time)
+        + (end_redct.millitm - start_redct.millitm));
 		
-		if(iter > 500) {
-			iter += n_iter;
-			continue;
-		}
 
-		check_diff<<<1, NUMBLOCKS>>>(d_partial, d_diff, diff);
-		total_redct += calc_interval(&start_redct, &end_redct);
+		// if((iter/n_iter) % 1000 != 0) {
+		// 	iter += n_iter;
+		// 	continue;
+		// }
 		ftime(&start_aux);
-		
-		// printf("d_diff = %lf\n", *d_diff);
-
-		err = cudaMemcpy(diff, d_diff, sizeof(double), cudaMemcpyDeviceToHost);
+		err = cudaMemcpy(partial, d_partial, NUMBLOCKS*sizeof(double), cudaMemcpyDeviceToHost);
 		if (err != cudaSuccess){
-			fprintf(stderr, "Failed to copy pointer d_diff from device to host (error code %s)!\n", cudaGetErrorString(err));
+			fprintf(stderr, "Failed to copy pointer d_partial from device to host (error code %s)!\n", cudaGetErrorString(err));
 			exit(EXIT_FAILURE);
 		}
-
-		total_aux += calc_interval(&start_aux, &end_aux);
+		total_aux += (int) (1000.0 * (end_aux.time - start_aux.time)
+        + (end_aux.millitm - start_aux.millitm));
+		
+		for(i = 0; i < NUMBLOCKS; i++){
+			if(partial[i] > diff) diff = partial[i];
+		}
+		ftime(&end_aux);
 		iter += n_iter;
 		
-		if(*diff < eps){
-			break;
-			// return iter;
+		if(diff < eps){
+			return iter;
 		}
 	}
-	printf("diff = %lf\n", *diff);
-
 	ftime(&end_total);
 	total += (int) (1000.0 * (end_total.time - start_total.time)
 				+ (end_total.millitm - start_total.millitm));
@@ -1325,6 +1171,7 @@ int adap_Vel(int n_blocos, int n_threads){
 	return 0;
 }
 
+
 int main(int argc, char ** argv){
 	// cudaEventCreate(&start);
 	// cudaEventCreate(&stop);
@@ -1336,8 +1183,8 @@ int main(int argc, char ** argv){
     
 	n_threads = (imax+2);
 	n_blocos = ((imax+2)*(jmax+2)+ n_threads-1)/n_threads;
-	init_UVP<<<n_blocos, n_threads>>>(imax, jmax, vx_init, vy_init, p_init, d_vx, d_vy, d_p, d_rhs, d_F, d_G, d_p_red, d_p_black);
-	build_poisson_system<<<1, 1>>>(jmax, imax, delx, dely, d_diag_n, d_diag_s, d_diag_e, d_diag_w, d_diag_p, d_p_red, d_p_black);
+	init_UVP<<<n_blocos, n_threads>>>(imax, jmax, vx_init, vy_init, p_init, d_vx, d_vy, d_p, d_rhs, d_F, d_G);
+	build_poisson_system<<<1, 1>>>(jmax, imax, delx, dely, d_diag_n, d_diag_s, d_diag_e, d_diag_w, d_diag_p);
 	
 	int set_time = 1;
 	double ant_del_time = 1.0;
@@ -1419,17 +1266,16 @@ int main(int argc, char ** argv){
 		comp_FG<<<n_blocos, n_threads>>>(imax, jmax, gam, delx, dely, Re, gx, gy, del_time, d_vx, d_vy, d_F, d_G);
 		comp_RHS<<<n_blocos, n_threads>>>(imax, jmax, delx, dely, del_time, d_rhs, d_F, d_G);		
 
-		Poisson();
-		// printf("%d iteracoes \t", Poisson());
-		// if(time_frame < 1000) break;
-		// printf("Time = %lf/%lf\r", ttime, final_time);
 		ftime(&aux_start);
-		state = adap_Vel(n_blocos, n_threads);
+		printf("%d iteracoes \t", Poisson());
 		ftime(&end);
-		
 		int time_frame = (int) (1000.0 * (end.time - aux_start.time)
         + (end.millitm - aux_start.millitm));
-		// printf("Time elapsed - : %lf seconds, frame %d\n\n", time_frame/1000.0, frames);
+		printf("Time elapsed - Poisson: %lf seconds, frame %d\n\n", time_frame/1000.0, frames);
+		if(time_frame < 1000) break;
+		// printf("Time = %lf/%lf\r", ttime, final_time);
+		state = adap_Vel(n_blocos, n_threads);
+		
 		ttime += del_time;
 		ant_del_time = del_time;
 
@@ -1440,11 +1286,10 @@ int main(int argc, char ** argv){
 
 		// printf("Time = %d\n", time_frame);
 		if(time_frame - last_time_frame >= 1000.0) {
-			printf("%d fps\n", frame);
+			// printf("%d fps\n", frame);
 			frame = 0;
 			last_time_frame = time_frame;
 		}
-		break;
 	}
 
 	set_bondCond();		
@@ -1461,7 +1306,7 @@ int main(int argc, char ** argv){
 	int milliseconds = (int) (1000.0 * (end.time - start.time) + (end.millitm - start.millitm));
 	
 	printf("Time = %lf/%lf\n", ttime, final_time);
-	printf("Time elapsed: %lf seconds\n\n", milliseconds/1000.0);
+	printf("Time elapsed: %lf seconds\n", milliseconds/1000.0);
 
 	/*
 	frame = 0;
