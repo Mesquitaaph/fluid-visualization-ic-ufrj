@@ -381,15 +381,15 @@ void render_2(t_particula** velocidades, t_particula *particulas, long int N_PAR
     int color_trans_mag = 64; // color_transition_magnitude
     double color_down_lim = 256 - (256-color_up_lim) - color_trans_mag;
 
-    double full_color = 256*3 - 1;
+    double full_color = 256*1 - 1;
     double vel_xy = sqrt(p.vx * p.vx + p.vy*p.vy);
 
     double bright = map(vel_xy, 0.000006, 0.5, 0, full_color);
 
 
-    double bright_b = bright >= 0 && bright < color_up_lim ? bright : 10;
-    double bright_g = bright >= color_down_lim && bright < color_up_lim*2 ? bright : 10;
-    double bright_r = bright >= color_down_lim*2 && bright < color_up_lim*3 ? bright : 10;
+    double bright_b = bright; //>= 0 && bright < color_up_lim ? bright : 10;
+    double bright_g = bright; //>= color_down_lim && bright < color_up_lim*2 ? bright : 10;
+    double bright_r = bright; //>= color_down_lim*2 && bright < color_up_lim*3 ? bright : 10;
     render_pixel(tam_p, x, y, bright_r, bright_g, bright_b);
   }
 }

@@ -19,7 +19,7 @@
 
 #define NUMBLOCKS 32
 
-#define TAM_BUFFER_SOR 1024
+#define TAM_BUFFER_SOR 257
 
 typedef struct Particula {
   double x, y, vx, vy;
@@ -98,60 +98,6 @@ __device__ int d_n_iter = 5;
 double map(double value, double min, double max, double floor, double ceil) {
     return floor + (ceil - floor) * ((value - min) / (max - min));
 }
-
-// void render(double time, t_particula *particulas) {
-//   int tam_p = 0;
-// 	double bright = map(time, 0, final_time, 16, 255);
-
-//   for(int z = 0; z < N_PARTICULAS; z++) {
-//     t_particula p = particulas[z];
-//     int x = p.x;
-//     int y = HEIGHT - p.y;
-
-//     for(int i = -tam_p; i <= tam_p; i++) {
-//       for(int j = -tam_p; j <= tam_p; j++) {
-//         makePixel(
-//           x+i, y+j, 
-//           bright, bright, bright,
-//           PixelBuffer, WIDTH, HEIGHT
-//         );
-//       }
-//     }
-//   }
-// }
-
-// void atualiza_particulas(double dt, int n_dim, t_particula* particulas, double* d_vx, double* d_vy) {
-//   for(int i = 0; i < N_PARTICULAS; i++) {
-//     t_particula p = particulas[i];
-
-//     int x = p.x;
-//     int y = HEIGHT - p.y;
-
-//     // Limpa o espaco em que a particula estava
-//     for(int k = -1; k <= 1; k++) {
-//       for(int j = -1; j <= 1; j++) {
-//         makePixel(
-//           x+k, y+j, 
-//           0, 0, 0,
-//           PixelBuffer, WIDTH, HEIGHT
-//         );
-//       }
-//     }
-
-//     //POINT pvel = velocidades[WIDTH-(int)p.y][(int)p.x];
-// 		int idx = (WIDTH-4)*((int)p.y) + (int)p.x;
-//     particulas[i].vx = d_vx[idx];
-//     particulas[i].vy = d_vy[idx];
-
-//     particulas[i].x += d_vx[idx] * dt;
-//     if(particulas[i].x < 1) particulas[i].x = 1;
-//     if(particulas[i].x > n_dim-1) particulas[i].x = n_dim-1;
-
-//     particulas[i].y += d_vy[idx] * dt;
-//     if(particulas[i].y < 1) particulas[i].y = 1;
-//     if(particulas[i].y > n_dim-1) particulas[i].y = n_dim-1;
-//   }
-// }
 
 double absf(double a){
 	return a < 0 ? -1*a : a;
@@ -299,7 +245,6 @@ double *p;
 double *rhs;
 double *F;
 double *G;
-double *diff;
 
 double *d_vx = NULL;
 double *d_vy = NULL;
@@ -331,12 +276,13 @@ double *d_vyflag = NULL;
 int *d_res = NULL;
 
 double *dp=NULL;
-double* d_diff = NULL;
 
 
 int n_threads,n_blocos ;
 
 cudaError_t err = cudaSuccess;
+
+texture<double, 1, cudaReadModeElementType> tex;
 
 void write_file(char* output){
 	FILE *fp;
@@ -374,9 +320,8 @@ void alocate_vectors_host(){
 	rhs = (double*)malloc((imax+2)*(jmax+2) * sizeof(double));
 	F = (double*)malloc((imax+2)*(jmax+2) * sizeof(double));
 	G = (double*)malloc((imax+2)*(jmax+2) * sizeof(double));
-	diff = (double*)malloc(sizeof(double));
 	
-	if(vx == NULL || vy == NULL || p == NULL || rhs == NULL || F == NULL || G == NULL || diff == NULL){
+	if(vx == NULL || vy == NULL || p == NULL || rhs == NULL || F == NULL || G == NULL){
 		printf("It wasn't possible to alocate memory\n");
 		exit(0);
 	}
@@ -512,12 +457,6 @@ void alocate_vectors_device(){
 		exit(EXIT_FAILURE);
 	}
 
-	err = cudaMalloc((void **)&d_diff, sizeof(double));
-	if (err != cudaSuccess){
-		fprintf(stderr, "Failed to allocate device pointer d_diff (error code %s)!\n", cudaGetErrorString(err));
-		exit(EXIT_FAILURE);
-	}
-
 	err = cudaMalloc((void **)&d_p_red, red_black_size);
 	if (err != cudaSuccess){
 		fprintf(stderr, "Failed to allocate device pointer d_p_red (error code %s)!\n", cudaGetErrorString(err));
@@ -537,8 +476,7 @@ void free_vectors_host(){
 	free(p);
 	free(rhs);
 	free(F);
-	free(G);	
-	free(diff);	
+	free(G);
 }
 
 void free_vectors_device(){
@@ -607,12 +545,6 @@ void free_vectors_device(){
 	err = cudaFree(d_vydiff);
 	if (err != cudaSuccess){
 		fprintf(stderr, "Failed to free device pointer vydiff (error code %s)!\n", cudaGetErrorString(err));
-		exit(EXIT_FAILURE);
-	}	
-	
-	err = cudaFree(d_diff);
-	if (err != cudaSuccess){
-		fprintf(stderr, "Failed to free device pointer d_diff (error code %s)!\n", cudaGetErrorString(err));
 		exit(EXIT_FAILURE);
 	}	
 	
@@ -1070,67 +1002,36 @@ __global__ void red_SOR(int imax, int jmax, double omg, double* d_rhs, double* d
 	int paridade = line % 2; // paridade = 0
 	double aux;
 	
-	// __shared__ double buffer[TAM_BUFFER_SOR];
+	int nidx_red = 2*idx + (idx/new_imax)%2;
+	int nidx_black = 2*idx + ((idx/new_imax + 1))%2;
+
+	// __shared__ double d_buffer[TAM_BUFFER_SOR*4];
+
+	// if(threadIdx.x == TAM_BUFFER_SOR*3 - 1) {
+	// 	d_buffer[threadIdx.x + TAM_BUFFER_SOR] = d_p_black[idx + new_imax];
+	// 	// if(threadIdx.x + TAM_BUFFER_SOR > TAM_BUFFER_SOR*4-1) printf("max = | id =\n");
+	// 	if(idx + new_imax > size/2) printf("max = | id =\n");
+	// }
+	// d_buffer[threadIdx.x] = d_p_black[idx];
+
+	// __syncthreads();
+
 	// if(idx == 0) printf("blockDim.x = %d\n", blockDim.x);
 	// idx = j*(imax+2)+i;
 	// idx+1 = j*(imax+2)+i+1;
 	// idx+1+(imax+2) = j*(imax+2)+(imax+2)+(i+1);
 	// idx+1+(imax+2) = (j+1)*(imax+2) +(i+1);
 
-	// buffer[idx] = d_p[idx];
-	// __syncthreads();
-
-	int nidx_red = 2*idx + (idx/new_imax)%2;
-	int nidx_black = 2*idx + ((idx/new_imax + 1))%2;
-
 	if(	idx < size/2 && nidx_red < size && nidx_red > (imax+1) && nidx_red < (imax+2)*(jmax+1) && nidx_red % (imax+2) > 0 && nidx_red % (imax+2) < (imax+1)){
-			// if(nidx_red == imax+3 || nidx_red == (imax+2)*2 + 2) {
-			// 	int id_dir = idx+paridade, id_esq = idx-1+paridade;
-			// 	id_dir = 2*id_dir + (id_dir/new_imax+1)%2, id_esq = 2*id_esq + (id_esq/new_imax+1)%2;
 
-			// 	printf("idx = %d | right = %d | left = %d | paridade = %d\n", nidx_red, id_dir, id_esq, paridade);
-			// }
-			aux = d_diag_s[nidx_red]*d_p_black[idx + new_imax] + d_diag_n[nidx_red]*d_p_black[idx - new_imax]+ d_diag_e[nidx_red]*d_p_black[idx+paridade] + d_diag_w[nidx_red]*d_p_black[idx-1+paridade];
-			aux = (1-omg)*d_p_red[idx] + omg*(aux-d_rhs[nidx_red])/d_diag_p[nidx_red];
-			d_p_diff[nidx_red] = d_absf(aux-d_p_red[idx]);		
-			d_flag[nidx_red] = 1;
-			d_p_red[idx] = aux;
-			// d_p[nidx_red] = aux;
+		aux = d_diag_s[nidx_red]*d_p_black[idx + new_imax] + d_diag_n[nidx_red]*d_p_black[idx - new_imax]+ d_diag_e[nidx_red]*d_p_black[idx+paridade] + d_diag_w[nidx_red]*d_p_black[idx-1+paridade];
+		aux = (1-omg)*d_p_red[idx] + omg*(aux-d_rhs[nidx_red])/d_diag_p[nidx_red];
+		d_p_diff[nidx_red] = d_absf(aux-d_p_red[idx]);		
+		d_flag[nidx_red] = 1;
+		d_p_red[idx] = aux;
 	}
 
 	if(	nidx_black < size) d_flag[nidx_black] = 0;
-	// else{
-	// 	d_flag[idx] = 0;
-	// }
-
-
-	// if(	idx < size && idx > (imax+1) && idx < (imax+2)*(jmax+1) && 
-	// 		idx % 2 == paridade && idx % (imax+2) > 0 && idx % (imax+2) < (imax+1)){ // idx % 2 = 0
-	// 	// if(idx != (paridade ? nidx/2 : (nidx-1)/2)) {
-	// 	// 	printf("idx = %d, nidx = %d\n", idx, paridade ? nidx/2 : (nidx-1)/2);
-	// 	// }
-	// 	aux = d_diag_s[idx]*d_p[idx+(imax+2)] + d_diag_n[idx]*d_p[idx-(imax+2)]+ d_diag_e[idx]*d_p[idx+1] + d_diag_w[idx]*d_p[idx-1];
-	// 	aux = (1-omg)*d_p[idx] + omg*(aux-d_rhs[idx])/d_diag_p[idx];
-	// 	d_p_diff[idx] = d_absf(aux-d_p[idx]);		
-	// 	d_flag[idx] = 1;
-	// 	d_p[idx] = aux;
-	// }else{
-	// 	d_flag[idx] = 0;
-	// }
-	
-	// int nidx = 2*idx + (idx/((imax+2) / 2))%2;
-	// if(	nidx < size && nidx > (imax+1) && nidx < (imax+2)*(jmax+1) && 
-	// 		nidx % (imax+2) > 0 && nidx % (imax+2) < (imax+1)){
-	// 	// if(idx != (paridade ? nidx/2 : (nidx-1)/2)) {
-	// 	// 	printf("idx = %d, nidx = %d\n", idx, paridade ? nidx/2 : (nidx-1)/2);
-	// 	// }
-	// 	aux = d_diag_s[nidx]*d_p[nidx+(imax+2)] + d_diag_n[nidx]*d_p[nidx-(imax+2)]+ d_diag_e[nidx]*d_p[nidx+1] + d_diag_w[nidx]*d_p[nidx-1];
-	// 	aux = (1-omg)*d_p[nidx] + omg*(aux-d_rhs[nidx])/d_diag_p[nidx];
-	// 	d_p_diff[nidx] = d_absf(aux-d_p[nidx]);		
-	// 	d_flag[nidx] = 1;
-	// 	d_p[nidx] = aux;
-	// }
-
 }
 
 __global__ void black_SOR(int imax, int jmax, double omg, double* d_rhs, double* d_p_diff, double* d_diag_n, double* d_diag_s, double* d_diag_e, double* d_diag_w, double* d_diag_p, double* d_flag, double* d_p_red, double* d_p_black){
@@ -1141,39 +1042,19 @@ __global__ void black_SOR(int imax, int jmax, double omg, double* d_rhs, double*
 	int paridade =!(line % 2);
 	double aux;
 	
-	int nidx_black = 2*idx + ((idx/((imax+2) / 2) + 1))%2;
-	int nidx_red = 2*idx + (idx/((imax+2) / 2))%2;
+	int nidx_black = 2*idx + ((idx/new_imax + 1))%2;
+	int nidx_red = 2*idx + (idx/new_imax)%2;
 
-	if(	nidx_black < size && nidx_black > (imax+1) && nidx_black < (imax+2)*(jmax+1) && 
-			nidx_black % (imax+2) > 0 && nidx_black % (imax+2) < (imax+1)){
+	if(idx < size/2 && nidx_black < size && nidx_black > (imax+1) && nidx_black < (imax+2)*(jmax+1) && nidx_black % (imax+2) > 0 && nidx_black % (imax+2) < (imax+1)){
 
-		// if(nidx_black == imax+3 || nidx_black == (imax+2)*2 + 2) {
-		// 		int id_dir = idx+paridade, id_esq = idx-1+paridade;
-		// 		id_dir = 2*id_dir + (id_dir/new_imax+1)%2, id_esq = 2*id_esq + (id_esq/new_imax+1)%2;
-
-		// 		printf("idx = %d | right = %d | left = %d | paridade = %d\n", nidx_red, id_dir, id_esq, paridade);
-		// 	}
-		aux = d_diag_s[nidx_black]*d_p_red[idx+(imax+2)/2] + d_diag_n[nidx_black]*d_p_red[idx-(imax+2)/2]+ d_diag_e[nidx_black]*d_p_red[idx+paridade] + d_diag_w[nidx_black]*d_p_red[idx-1+paridade];
+		aux = d_diag_s[nidx_black]*d_p_red[idx + new_imax] + d_diag_n[nidx_black]*d_p_red[idx - new_imax]+ d_diag_e[nidx_black]*d_p_red[idx+paridade] + d_diag_w[nidx_black]*d_p_red[idx-1+paridade];
 		aux = (1-omg)*d_p_black[idx] + omg*(aux-d_rhs[nidx_black])/d_diag_p[nidx_black];
 		d_p_diff[nidx_black] = d_absf(aux-d_p_black[idx]);		
 		d_flag[nidx_black] = 1;
 		d_p_black[idx] = aux;
-		// d_p[nidx_black] = aux;
 	}
 	
 	if(	nidx_red < size) d_flag[nidx_red] = 0;
-
-	// if(	idx < size && idx > (imax+1) && idx < (imax+2)*(jmax+1) && idx % (imax+2) > 0 && idx % (imax+2) < (imax+1) && 
-	// 		idx % 2 == paridade){
-
-	// 	aux = d_diag_s[idx]*d_p[idx+(imax+2)] + d_diag_n[idx]*d_p[idx-(imax+2)]+d_diag_e[idx]*d_p[idx+1]+d_diag_w[idx]*d_p[idx-1];
-	// 	aux = (1-omg)*d_p[idx] + omg*(aux-d_rhs[idx])/d_diag_p[idx];
-	// 	d_p_diff[idx] = d_absf(aux-d_p[idx]);		
-	// 	d_flag[idx] = 1;
-	// 	d_p[idx] = aux;
-	// }	else{
-	// 	d_flag[idx] = 0;
-	// } 
 }
 
 __global__ void check_diff(double* d_partial, double* d_diff, double* diff) {
@@ -1205,56 +1086,52 @@ int Poisson(){
 	int iter = 0;
 	int i;
 	double partial[NUMBLOCKS];
+	double diff = 0;
 	struct timeb start_rbsor, end_rbsor, start_redct, end_redct, start_aux, end_aux, start_total, end_total;
 	int total_rbsor = 0, total_redct = 0, total_aux = 0, total = 0;
 
-	int n_blocos_sor = ((imax+2)*(jmax+2) + TAM_BUFFER_SOR-1)/TAM_BUFFER_SOR;
+	// int n_blocos_sor = ((imax+2)*(jmax+2)/2)/TAM_BUFFER_SOR*3;
 	// printf("%d == %d\n", n_blocos_sor * TAM_BUFFER_SOR, (imax)*(jmax));
-	// err = cudaMemcpy(d_diff, diff, sizeof(double), cudaMemcpyHostToDevice);
-	// if (err != cudaSuccess){
-	// 	fprintf(stderr, "Failed to copy pointer diff from device to host (error code %s)!\n", cudaGetErrorString(err));
-	// 	exit(EXIT_FAILURE);
-	// }
 	
 	ftime(&start_total);
 	while(iter < max_iter){
 		ftime(&start_rbsor);
 		for(i = 0; i < n_iter; i++){
-			red_SOR<<<n_blocos/2, n_threads>>>(imax, jmax, omg, d_rhs, d_p_diff, d_diag_n, d_diag_s, d_diag_e, d_diag_w, d_diag_p, d_flag, d_p_red, d_p_black);
-			// red_SOR<<<n_blocos_sor, TAM_BUFFER_SOR>>>(imax, jmax, omg, d_p, d_rhs, d_p_diff, d_diag_n, d_diag_s, d_diag_e, d_diag_w, d_diag_p, d_flag);
-			black_SOR<<<n_blocos/2, n_threads>>>(imax, jmax, omg, d_rhs, d_p_diff, d_diag_n, d_diag_s, d_diag_e, d_diag_w, d_diag_p, d_flag, d_p_red, d_p_black);
+			red_SOR<<<n_blocos, n_threads>>>(imax, jmax, omg, d_rhs, d_p_diff, d_diag_n, d_diag_s, d_diag_e, d_diag_w, d_diag_p, d_flag, d_p_red, d_p_black);
+			black_SOR<<<n_blocos, n_threads>>>(imax, jmax, omg, d_rhs, d_p_diff, d_diag_n, d_diag_s, d_diag_e, d_diag_w, d_diag_p, d_flag, d_p_red, d_p_black);
 		}
 
 		ftime(&start_redct);
+		diff = 0;
 		reductionMax<<<REDCT_NUMTHREADS, NUMBLOCKS>>>(imax, jmax, d_partial, d_p_diff, d_flag);
 		total_rbsor += calc_interval(&start_rbsor, &end_rbsor);
 		
-		if(iter > 500) {
-			iter += n_iter;
-			continue;
-		}
-
-		check_diff<<<1, NUMBLOCKS>>>(d_partial, d_diff, diff);
-		total_redct += calc_interval(&start_redct, &end_redct);
-		ftime(&start_aux);
-		
-		// printf("d_diff = %lf\n", *d_diff);
-
-		err = cudaMemcpy(diff, d_diff, sizeof(double), cudaMemcpyDeviceToHost);
+		err = cudaMemcpy(partial, d_partial, NUMBLOCKS*sizeof(double), cudaMemcpyDeviceToHost);
 		if (err != cudaSuccess){
-			fprintf(stderr, "Failed to copy pointer d_diff from device to host (error code %s)!\n", cudaGetErrorString(err));
+			fprintf(stderr, "Failed to copy pointer d_partial from device to host (error code %s)!\n", cudaGetErrorString(err));
 			exit(EXIT_FAILURE);
 		}
 
+		// if(iter > 500) {
+		// 	iter += n_iter;
+		// 	continue;
+		// }
+
+		total_redct += calc_interval(&start_redct, &end_redct);
+		ftime(&start_aux);
+
+		for(i = 0; i < NUMBLOCKS; i++){
+			if(partial[i] > diff) diff = partial[i];
+		}
 		total_aux += calc_interval(&start_aux, &end_aux);
 		iter += n_iter;
 		
-		if(*diff < eps){
+		if(diff < eps){
 			break;
 			// return iter;
 		}
 	}
-	printf("diff = %lf\n", *diff);
+	printf("diff = %lf\n", diff);
 
 	ftime(&end_total);
 	total += (int) (1000.0 * (end_total.time - start_total.time)
@@ -1267,14 +1144,19 @@ int Poisson(){
 	return iter;
 }
 
-__global__ void d_adap_Vel(int imax, int jmax, double delx, double dely, double del_time, double* d_vx, double* d_vy, double* d_p, double* d_F, double* d_G, double* d_vxdiff, double* d_vydiff, double* d_vxflag, double* d_vyflag){
+__global__ void d_adap_Vel(int imax, int jmax, double delx, double dely, double del_time, double* d_vx, double* d_vy, double* d_F, double* d_G, double* d_vxdiff, double* d_vydiff, double* d_vxflag, double* d_vyflag, double* d_p_red, double* d_p_black){
 	int idx = blockIdx.x * blockDim.x + threadIdx.x;
 	int n = (imax+2)*(jmax+2);
+	int line = idx / (imax+2);
+	int paridade = line % 2;
+
+	double dp_nidx = idx % 2 == paridade ? d_p_red[idx/2] : d_p_black[idx/2];
+	double dp_nidx_i = (idx+1) % 2 == paridade ? d_p_red[(idx+1)/2] : d_p_black[(idx+1)/2];
+	double dp_nidx_imax = idx % 2 == paridade ? d_p_black[(idx-(imax+2))/2] : d_p_red[(idx-(imax+2))/2];
 	
 	double aux;
-	
 	if(idx < n && idx > (imax+1) && idx < (jmax+1)*(imax+2) && idx%(imax+2) > 0 && idx%(imax+2) < (imax)){
-		aux = d_F[idx] - (del_time*(d_p[idx+1] - d_p[idx])/delx); //matrix[j][i].F - (del_time*(matrix[j][i+1].p - matrix[j][i].p)/delx);
+		aux = d_F[idx] - (del_time*(dp_nidx_i - dp_nidx)/delx); //matrix[j][i].F - (del_time*(matrix[j][i+1].p - matrix[j][i].p)/delx);
 		d_vxdiff[idx] = d_absf(aux-d_vx[idx]);   //absf(aux-matrix[j][i].vx);
 		d_vxflag[idx] = 1;
 		d_vx[idx] = aux;		
@@ -1283,7 +1165,7 @@ __global__ void d_adap_Vel(int imax, int jmax, double delx, double dely, double 
 	}
 	
 	if(idx < n && idx >= 2*(imax+2) && idx < (jmax+1)*(imax+2) && idx%(imax+2) > 0 && idx%(imax+2) < (imax+1)){
-		aux = d_G[idx] - (del_time*(d_p[idx-(imax+2)] - d_p[idx])/dely); //matrix[j][i].G - (del_time*(matrix[j-1][i].p - matrix[j][i].p)/dely);
+		aux = d_G[idx] - (del_time*(dp_nidx_imax - dp_nidx)/dely); //matrix[j][i].G - (del_time*(matrix[j-1][i].p - matrix[j][i].p)/dely);
 		d_vydiff[idx] = d_absf(aux-d_vy[idx]);//absf(aux-matrix[j][i].vy);
 		d_vyflag[idx] = 1;
 		d_vy[idx] = aux;
@@ -1300,7 +1182,7 @@ int adap_Vel(int n_blocos, int n_threads){
 	double partialvx[NUMBLOCKS];
 	double partialvy[NUMBLOCKS];
 	
-	d_adap_Vel<<< n_blocos, n_threads >>>(imax, jmax, delx, dely, del_time, d_vx, d_vy, d_p, d_F, d_G, d_vxdiff, d_vydiff, d_vxflag, d_vyflag);		
+	d_adap_Vel<<< n_blocos, n_threads >>>(imax, jmax, delx, dely, del_time, d_vx, d_vy, d_F, d_G, d_vxdiff, d_vydiff, d_vxflag, d_vyflag, d_p_red, d_p_black);		
 
 	reductionMax<<<REDCT_NUMTHREADS, NUMBLOCKS>>>(imax, jmax, d_partial, d_vxdiff, d_vxflag);
 	err = cudaMemcpy(partialvx, d_partial, NUMBLOCKS*sizeof(double), cudaMemcpyDeviceToHost);
@@ -1326,9 +1208,6 @@ int adap_Vel(int n_blocos, int n_threads){
 }
 
 int main(int argc, char ** argv){
-	// cudaEventCreate(&start);
-	// cudaEventCreate(&stop);
-
 	read_file(argv[1]);
 	alocate_vectors_host();
 	alocate_vectors_device();
@@ -1339,68 +1218,28 @@ int main(int argc, char ** argv){
 	init_UVP<<<n_blocos, n_threads>>>(imax, jmax, vx_init, vy_init, p_init, d_vx, d_vy, d_p, d_rhs, d_F, d_G, d_p_red, d_p_black);
 	build_poisson_system<<<1, 1>>>(jmax, imax, delx, dely, d_diag_n, d_diag_s, d_diag_e, d_diag_w, d_diag_p, d_p_red, d_p_black);
 	
+	cudaArray* cuArray;
+
+	cudaMallocArray(&cuArray, &tex.channelDesc, n_threads*n_threads/2, 1);
+	cudaBindTextureToArray(tex, cuArray);
+
+	tex.filterMode = cudaFilterModeLinear;
+
 	int set_time = 1;
 	double ant_del_time = 1.0;
 	double eps_time = 1e-7;
 	int num_time = 0;
 	int limit = 100;
-	int frames = 0;
 	int max_frames = 2000;
 
   // gettimeofday(&start, NULL);
 	ftime(&start);
 
-	t_particula particulas[N_PARTICULAS];
-  for(int i = 0; i < N_PARTICULAS; i++) {
-    int sq = (int)sqrt(N_PARTICULAS);
-
-    particulas[i].x = 2+(i % sq) * (WIDTH-2)/sq;
-    particulas[i].y = 2+(i / sq) * (HEIGHT-2)/sq;
-    particulas[i].vx = 0;
-    particulas[i].vy = 0;
-  }
-
-/*
-  GLFWwindow* window;
-  // Inicializando a biblioteca
-  if (!glfwInit())
-    return -1;
-
-  // Criando a janela e seu contexto OpenGL
-  window = glfwCreateWindow(WIDTH, HEIGHT, "Visualizacao de movimento de particulas dada equações de Navier-Stokes", NULL, NULL);
-  if (!window){
-    glfwTerminate();
-    return -1;
-  }
-
-  // Cria o contexto atual da janela
-  glfwMakeContextCurrent(window);
-
-*/
-	int frame = 0;
+	int frame = 0, frames = 0;
 	float last_time_frame = 0.0;
 	printf("Entrando no laco principal\n");
 	while(!state){
-	/*
-		// Configuração da visualização
-    glfwGetFramebufferSize(window, &WindowMatrixPlot.width, &WindowMatrixPlot.height);
-    glViewport(0, 0, WindowMatrixPlot.width, WindowMatrixPlot.height);
-
-    // Atualiza a posicao de cada uma das particulas
-		copy_vectors_device_to_host();
-    atualiza_particulas(ant_del_time, WIDTH, particulas, vx, vy);
-
-    // Pinta os pixels na janela
-    render(ttime, particulas);
-
-		frame++;
-		glDrawPixels(WIDTH, HEIGHT, GL_RGB, GL_UNSIGNED_BYTE, PixelBuffer);
-
-    // Funções necesárias para o funcionamento da biblioteca que desenha os pixels
-    glfwSwapBuffers(window);
-    glfwPollEvents();
-	*/
-
+		ftime(&aux_start);
 		if(set_time){
 			comp_delt();
 		}
@@ -1419,17 +1258,17 @@ int main(int argc, char ** argv){
 		comp_FG<<<n_blocos, n_threads>>>(imax, jmax, gam, delx, dely, Re, gx, gy, del_time, d_vx, d_vy, d_F, d_G);
 		comp_RHS<<<n_blocos, n_threads>>>(imax, jmax, delx, dely, del_time, d_rhs, d_F, d_G);		
 
-		Poisson();
-		// printf("%d iteracoes \t", Poisson());
+		printf("%d iteracoes \t", Poisson());
+
 		// if(time_frame < 1000) break;
 		// printf("Time = %lf/%lf\r", ttime, final_time);
-		ftime(&aux_start);
+		
 		state = adap_Vel(n_blocos, n_threads);
 		ftime(&end);
 		
 		int time_frame = (int) (1000.0 * (end.time - aux_start.time)
         + (end.millitm - aux_start.millitm));
-		// printf("Time elapsed - : %lf seconds, frame %d\n\n", time_frame/1000.0, frames);
+		printf("Time elapsed : %lf seconds, frame %d\n\n", time_frame/1000.0, frames);
 		ttime += del_time;
 		ant_del_time = del_time;
 
@@ -1444,7 +1283,7 @@ int main(int argc, char ** argv){
 			frame = 0;
 			last_time_frame = time_frame;
 		}
-		break;
+		// break;
 	}
 
 	set_bondCond();		
@@ -1452,37 +1291,16 @@ int main(int argc, char ** argv){
 	// gettimeofday(&end, NULL);
 	ftime(&end);
 
+	int milliseconds = (int) (1000.0 * (end.time - start.time) + (end.millitm - start.millitm));
+	
+	printf("Time = %lf/%lf\n", ttime, final_time);
+	printf("Time elapsed: %lf seconds\n\n", milliseconds/1000.0);
+
 	copy_vectors_device_to_host(); 
   write_file(argv[2]);
     
   free_vectors_device();	
 	free_vectors_host();
 
-	int milliseconds = (int) (1000.0 * (end.time - start.time) + (end.millitm - start.millitm));
-	
-	printf("Time = %lf/%lf\n", ttime, final_time);
-	printf("Time elapsed: %lf seconds\n\n", milliseconds/1000.0);
-
-	/*
-	frame = 0;
-	while(frame < max_frames){
-		// Configuração da visualização
-    glfwGetFramebufferSize(window, &WindowMatrixPlot.width, &WindowMatrixPlot.height);
-    glViewport(0, 0, WindowMatrixPlot.width, WindowMatrixPlot.height);
-
-    // Atualiza a posicao de cada uma das particulas
-    atualiza_particulas(ant_del_time, WIDTH, particulas, vx, vy);
-
-    // Pinta os pixels na janela
-    render(ttime, particulas);
-
-		frame++;
-		glDrawPixels(WIDTH, HEIGHT, GL_RGB, GL_UNSIGNED_BYTE, PixelBuffer);
-
-    // Funções necesárias para o funcionamento da biblioteca que desenha os pixels
-    glfwSwapBuffers(window);
-    glfwPollEvents();
-	}
-	*/
 	return 0;
 }
