@@ -1,8 +1,11 @@
+#define STB_IMAGE_WRITE_IMPLEMENTATION
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <math.h>
 #include <GLFW/glfw3.h>
+#include "stb_image_write.h"
 
 #define OFFSET_X 1
 #define OFFSET_Y 1
@@ -200,6 +203,23 @@ void read_file_2(char * file_name, t_particula **velocidades){
   printf("max_vel = %lf, min_vel = %lf, med_vel = %lf\n", max_vel, min_vel, med_vel);
 }
 
+void saveImage(char* filepath, GLFWwindow* w) {
+  int width, height;
+  glfwGetFramebufferSize(w, &width, &height);
+  GLsizei nrChannels = 3;
+  GLsizei stride = nrChannels * width;
+  stride += (stride % 4) ? (4 - stride % 4) : 0;
+  GLsizei bufferSize = stride * height;
+  char *buffer;
+  buffer = (char*) malloc(bufferSize * sizeof(char));
+  glPixelStorei(GL_PACK_ALIGNMENT, 4);
+  glReadBuffer(GL_FRONT);
+  glReadPixels(0, 0, width, height, GL_RGB, GL_UNSIGNED_BYTE, buffer);
+  stbi_flip_vertically_on_write(1);
+  stbi_write_png(filepath, width, height, nrChannels, buffer, stride);
+  free(buffer);
+}
+
 double mirror_value(double value, double mirror) {
   if(mirror == 0.0) return value;
   return mirror - value;
@@ -257,13 +277,14 @@ void makePixel(int x, int y, int r, int g, int b, GLubyte* pixels, int width, in
 }
 
 // Atribui ao pixel na posição (x,y) a cor [r,g,b]
-void fadeOutPixel(int x, int y, int magnitude, GLubyte* pixels, int width, int height) {
+void fadeOutPixel(int x, int y, int magnitude, int frame, GLubyte* pixels, int width, int height) {
   int min = 10;
+  int fade = frame % magnitude == 0 ? 1 : 0;
   if (0 <= x && x < width && 0 <= y && y < height) {
     int position = (x + y * width) * 3;
-    pixels[position] = pixels[position] == 0 ? 0 : MAX(pixels[position] - magnitude, min);
-    pixels[position + 1] = pixels[position + 1] == 0 ? 0 : MAX(pixels[position + 1] - magnitude, min);
-    pixels[position + 2] = pixels[position + 2] == 0 ? 0 : MAX(pixels[position + 2] - magnitude, min);
+    pixels[position] = pixels[position] == 0 ? 0 : MAX(pixels[position] - fade, min);
+    pixels[position + 1] = pixels[position + 1] == 0 ? 0 : MAX(pixels[position + 1] - fade, min);
+    pixels[position + 2] = pixels[position + 2] == 0 ? 0 : MAX(pixels[position + 2] - fade, min);
 
     // printf("(%d, %d, %d)\n", pixels[position], pixels[position + 1], pixels[position + 2]);
   }
@@ -360,14 +381,14 @@ void atualiza_particulas(double dt, int n_dim, t_particula** A, t_particula* par
   }
 }
 
-void render_2(t_particula** velocidades, t_particula *particulas, long int N_PARTICULAS) {
-  int tam_p = 0, fadeOutMagnitude = 0.9;
+void render_2(t_particula** velocidades, t_particula *particulas, long int N_PARTICULAS, int frame) {
+  int tam_p = 0, fadeOutMagnitude = 10;
 
   for(int x = 0; x < WIDTH; x++) {
     for(int y = 0; y < HEIGHT; y++) {
       fadeOutPixel(
         x, y, 
-        fadeOutMagnitude,
+        fadeOutMagnitude, frame,
         PixelBuffer, WIDTH, HEIGHT
       );
     }
@@ -384,7 +405,7 @@ void render_2(t_particula** velocidades, t_particula *particulas, long int N_PAR
     double full_color = 256*1 - 1;
     double vel_xy = sqrt(p.vx * p.vx + p.vy*p.vy);
 
-    double bright = map(vel_xy, 0.000006, 0.5, 0, full_color);
+    double bright = map(vel_xy, 0.000006, 0.5, 50, full_color);
 
 
     double bright_b = bright; //>= 0 && bright < color_up_lim ? bright : 10;
@@ -394,7 +415,7 @@ void render_2(t_particula** velocidades, t_particula *particulas, long int N_PAR
   }
 }
 
-void atualiza_particulas_2(double dt, int n_dim, t_particula** A, t_particula* particulas, long int N_PARTICULAS) {
+void atualiza_particulas_2(double dt, int n_dim, t_particula** A, t_particula* particulas, long int N_PARTICULAS, int frame) {
   int tam_p = 0;
   for(long int i = 0; i < N_PARTICULAS; i++) {
     t_particula p = particulas[i];
@@ -423,7 +444,7 @@ void atualiza_particulas_2(double dt, int n_dim, t_particula** A, t_particula* p
     p.rastro_y[0] = novo_y;
   }
 
-  render_2(A, particulas, N_PARTICULAS);
+  render_2(A, particulas, N_PARTICULAS, frame);
 }
 
 void preencheMatrizVelA(int n, t_particula** A) {
@@ -456,7 +477,7 @@ void preencheMatrizVelA(int n, t_particula** A) {
 int main(int argc, char** argv) {
   int n_dim = WIDTH, nt = 20000;
   long int N_PARTICULAS = 256;
-  double dt = 2.5;//0.0019073486;
+  double dt = 1.5;//0.0019073486;
   t_particula **A = create_matrix(n_dim, n_dim);
 
   t_particula* particulas;
@@ -523,14 +544,23 @@ int main(int argc, char** argv) {
     glViewport(0, 0, WindowMatrixPlot.width, WindowMatrixPlot.height);
     // printf("x = %lf, y = %lf\n", particulas[0].x, particulas[0].y);
     // Atualiza a posicao de cada uma das particulas
-    atualiza_particulas_2(dt, n_dim, A, particulas, N_PARTICULAS);
+    atualiza_particulas_2(dt, n_dim, A, particulas, N_PARTICULAS, frame);
 
     // // Pinta os pixels na janela
     // render(A, particulas, N_PARTICULAS);
 
 
     // preencheMatrizVelA(n_dim, A);
+    if(frame % 100 == 0) {
+      char dir[200];
+      sprintf(dir, 
+        "C:\\Users\\Hertz\\Documents\\Computacao-e-Estudos\\fluid-visualization-ic-ufrj\\estudo-visualizacao\\prints\\%deps%dtau%dframe_%d.png",
+        512, 7, 7, frame
+      );
 
+      saveImage(dir, window);
+      printf("Captura de tela feita | frame = %d\n", frame);
+    }
     frame++;
     glClear(GL_COLOR_BUFFER_BIT);
     glClear(GL_DEPTH_BUFFER_BIT);

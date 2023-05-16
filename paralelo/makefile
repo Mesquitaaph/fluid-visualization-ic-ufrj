@@ -1,10 +1,10 @@
 default:
 
 compile:
-	nvcc -c nvrstks.cu
+	nvcc -O3 -c nvrstks.cu
 
 compile_original:
-	nvcc -c nvrstks_original.cu
+	nvcc -O3 -c nvrstks_original.cu
 
 compile_windows: compile	
 	nvcc -o paralel nvrstks.obj

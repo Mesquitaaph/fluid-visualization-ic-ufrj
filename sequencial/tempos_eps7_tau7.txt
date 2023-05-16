@@ -1,0 +1,2 @@
+Tempo decorrido 15965.240000 segundos (266.087333 minutos) - Iteracao 3104405
+

@@ -6,10 +6,10 @@
 0:dely
 30.0:final_time
 0.02:del_time
-0.5:tau
+0.7:tau
 5000:max_iter
 0:res
-0.00001:eps
+0.0000001:eps
 1.7:omg
 0.9:gam
 1000:Re

@@ -248,18 +248,19 @@ void write_file(char * output){
 	  perror("Error while opening the file.\n");
 	  exit(EXIT_FAILURE);
 	}
-	// fprintf(fp,"Time taken: %ld seconds\n", end.tv_sec-start.tv_sec);
-	// fprintf(fp,"Simulation Time: %.5f seconds\n", ttime);
+	int milliseconds = (int) (1000.0 * (end.time - start.time) + (end.millitm - start.millitm));
+	fprintf(fp,"Time taken: %lf seconds\n", milliseconds/1000.0);
+	fprintf(fp,"Simulation Time: %.5f seconds\n", ttime);
 	for(i=0;i<imax+2;i++){
 		for(j=0;j<jmax+2;j++){
 			idx=i*(imax+2)+j;
 			fprintf(fp,"vx[%d][%d]=%.10f\n",i,j,vx[idx]);
 			fprintf(fp,"vy[%d][%d]=%.10f\n",i,j,vy[idx]);
-			// fprintf(fp,"F[%d][%d]=%.10f\n",i,j,F[idx]);
-			// fprintf(fp,"G[%d][%d]=%.10f\n",i,j,G[idx]);
-			// fprintf(fp,"p[%d][%d]=%.10f\n",i,j,p[idx]);
+			fprintf(fp,"F[%d][%d]=%.10f\n",i,j,F[idx]);
+			fprintf(fp,"G[%d][%d]=%.10f\n",i,j,G[idx]);
+			fprintf(fp,"p[%d][%d]=%.10f\n",i,j,p[idx]);
 		}
-		//fprintf(fp,"\n");
+		fprintf(fp,"\n");
 	}
 	fclose(fp);
 }
@@ -1045,13 +1046,13 @@ int Poisson(){
 			return iter;
 		}	
 	}
-	printf("diff = %lf\n", diff);
+	// printf("diff = %lf\n", diff);
 
 	ftime(&end_total);
 	total += (int) (1000.0 * (end_total.time - start_total.time)
 				+ (end_total.millitm - start_total.millitm));
 
-	printf("Total time - total: %d milliseconds\n", total);
+	// printf("Total time - total: %d milliseconds\n", total);
 	return iter;
 }
 
@@ -1169,7 +1170,7 @@ int main(int argc, char ** argv){
 
 		int time_frame = (int) (1000.0 * (end.time - aux_start.time)
         + (end.millitm - aux_start.millitm));
-		printf("Time elapsed : %lf seconds, frame %d\n\n", time_frame/1000.0, frames);
+		// printf("Time elapsed : %lf seconds, frame %d\n", time_frame/1000.0, frames);
 		ttime+=del_time;
 		ant_del_time=del_time;
 
@@ -1180,19 +1181,22 @@ int main(int argc, char ** argv){
 
 		// printf("Time = %d\n", time_frame);
 		if(time_frame - last_time_frame >= 1000.0) {
-			printf("%d fps\n", frame);
+			// printf("============ %d fps\n", frame);
 			frame = 0;
 			last_time_frame = time_frame;
 		}
+
+		ftime(&end);
+		int milliseconds = (int) (1000.0 * (end.time - start.time) + (end.millitm - start.millitm));
+		
+		printf("Total time elapsed: %lf seconds - Iteracoes: %d\r", milliseconds/1000.0, frames);
 	}
+	printf("\n");
 	set_bondCond();		
 	set_lidDrivenCavityProblem<<< n_blocos,n_threads>>>(1.0,imax,jmax,d_vx);
 	ftime(&end);
 
-	int milliseconds = (int) (1000.0 * (end.time - start.time) + (end.millitm - start.millitm));
-	
-	printf("Time = %lf/%lf\n", ttime, final_time);
-	printf("Time elapsed: %lf seconds\n\n", milliseconds/1000.0);
+	// printf("Time = %lf/%lf\n", ttime, final_time);
 
 	copy_vectors_device_to_host(); 
 	write_file(argv[2]);	

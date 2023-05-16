@@ -294,13 +294,12 @@ void write_file(char* output){
 	  exit(EXIT_FAILURE);
 	}
 	
-	// fprintf(fp,"Time taken: %ld seconds\n", stop-start);
+	int milliseconds = (int) (1000.0 * (end.time - start.time) + (end.millitm - start.millitm));
+	// fprintf(fp,"Time taken: %lf seconds\n", milliseconds/1000.0);
 	// fprintf(fp,"Simulation Time: %.5f seconds\n", ttime);
 
 	for(i = 0; i < imax+2; i++){
 		for(j = 0; j < jmax+2; j++){
-			// int ni = imax+1 - i;
-			// int nj = jmax+1 - j;
 			idx = i*(imax+2)+j;
 			fprintf(fp,"vx[%d][%d]=%.10f\n",i,j,vx[idx]);
 			fprintf(fp,"vy[%d][%d]=%.10f\n",i,j,vy[idx]);
@@ -1131,16 +1130,16 @@ int Poisson(){
 			// return iter;
 		}
 	}
-	printf("diff = %lf\n", diff);
+	// printf("diff = %lf\n", diff);
 
 	ftime(&end_total);
 	total += (int) (1000.0 * (end_total.time - start_total.time)
 				+ (end_total.millitm - start_total.millitm));
 
-	printf("Total time - reductionMax: %d milliseconds\n", total_redct);
-	printf("Total time - redBlackSOR: %d milliseconds\n", total_rbsor);
-	printf("Total time - aux: %d milliseconds\n", total_aux);
-	printf("Total time - total: %d milliseconds\n", total);
+	// printf("Total time - reductionMax: %d milliseconds\n", total_redct);
+	// printf("Total time - redBlackSOR: %d milliseconds\n", total_rbsor);
+	// printf("Total time - aux: %d milliseconds\n", total_aux);
+	// printf("Total time - total: %d milliseconds\n", total);
 	return iter;
 }
 
@@ -1231,12 +1230,13 @@ int main(int argc, char ** argv){
 	int num_time = 0;
 	int limit = 100;
 	int max_frames = 2000;
+	int dyn_eps_flag = 0;
 
   // gettimeofday(&start, NULL);
 	ftime(&start);
 
 	int frame = 0, frames = 0;
-	float last_time_frame = 0.0;
+	float last_time_frame = 0.0, last_frame_time = 0.0;
 	printf("Entrando no laco principal\n");
 	while(!state){
 		ftime(&aux_start);
@@ -1258,7 +1258,7 @@ int main(int argc, char ** argv){
 		comp_FG<<<n_blocos, n_threads>>>(imax, jmax, gam, delx, dely, Re, gx, gy, del_time, d_vx, d_vy, d_F, d_G);
 		comp_RHS<<<n_blocos, n_threads>>>(imax, jmax, delx, dely, del_time, d_rhs, d_F, d_G);		
 
-		printf("%d iteracoes \t", Poisson());
+		Poisson();
 
 		// if(time_frame < 1000) break;
 		// printf("Time = %lf/%lf\r", ttime, final_time);
@@ -1268,7 +1268,6 @@ int main(int argc, char ** argv){
 		
 		int time_frame = (int) (1000.0 * (end.time - aux_start.time)
         + (end.millitm - aux_start.millitm));
-		printf("Time elapsed : %lf seconds, frame %d\n\n", time_frame/1000.0, frames);
 		ttime += del_time;
 		ant_del_time = del_time;
 
@@ -1277,15 +1276,28 @@ int main(int argc, char ** argv){
 		time_frame = (int) (1000.0 * (end.time - start.time)
         + (end.millitm - start.millitm));
 
+		// printf("Total time elapsed: %lf seconds - Iteracoes: %d\n", time_frame/1000.0, frames);
 		// printf("Time = %d\n", time_frame);
+		// if(time_frame - last_frame_time > 1000.0/24.0 && eps <= 0.001 && !dyn_eps_flag){
+		// 	double range = absf(1000.0/24.0 - (time_frame - last_frame_time));
+		// 	// printf("range = %lf\n", log2(range));
+		// 	eps *= 2.0;//log(range);
+		// 	eps = min(0.001, eps);
+		// }
+		// if(time_frame - last_frame_time < 1000.0/30.0 && !dyn_eps_flag){
+		// 	eps /= 1.1;
+		// 	if(eps <= 1e-7) dyn_eps_flag = 1;
+		// }
 		if(time_frame - last_time_frame >= 1000.0) {
-			printf("%d fps\n", frame);
+			printf("============ %d fps\r", frame);
 			frame = 0;
 			last_time_frame = time_frame;
 		}
+
+		last_frame_time = time_frame;
 		// break;
 	}
-
+	
 	set_bondCond();		
 	set_lidDrivenCavityProblem<<<n_blocos, n_threads>>>(1.0, imax, jmax, d_vx);
 	// gettimeofday(&end, NULL);
@@ -1293,8 +1305,8 @@ int main(int argc, char ** argv){
 
 	int milliseconds = (int) (1000.0 * (end.time - start.time) + (end.millitm - start.millitm));
 	
-	printf("Time = %lf/%lf\n", ttime, final_time);
-	printf("Time elapsed: %lf seconds\n\n", milliseconds/1000.0);
+	// printf("Time = %lf/%lf\n", ttime, final_time);
+	printf("Total time elapsed: %lf seconds\n\n", milliseconds/1000.0);
 
 	copy_vectors_device_to_host(); 
   write_file(argv[2]);
