@@ -9,7 +9,7 @@
 0.7:tau
 5000:max_iter
 0:res
-0.0000001:eps
+0.00001:eps
 1.7:omg
 0.9:gam
 1000:Re
